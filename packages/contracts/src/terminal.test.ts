@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   DEFAULT_TERMINAL_ID,
+  TerminalAttachInput,
   TerminalClearInput,
   TerminalCloseInput,
   TerminalEvent,
@@ -105,6 +106,19 @@ describe("TerminalOpenInput", () => {
         },
       }),
     ).toBe(false);
+  });
+});
+
+describe("TerminalAttachInput", () => {
+  it("accepts explicit inactive-session restart intent", () => {
+    const parsed = decodeSync(TerminalAttachInput, {
+      threadId: "thread-1",
+      terminalId: DEFAULT_TERMINAL_ID,
+      cwd: "/tmp/project",
+      restartIfNotRunning: true,
+    });
+
+    expect(parsed.restartIfNotRunning).toBe(true);
   });
 });
 

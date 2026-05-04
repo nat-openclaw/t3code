@@ -320,6 +320,85 @@ it.layer(
     }),
   );
 
+  it.effect("attaches to exited sessions without restarting them", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter, getEvents } = yield* createManager();
+
+      yield* manager.open(openInput());
+      const process = ptyAdapter.processes[0];
+      expect(process).toBeDefined();
+      if (!process) return;
+
+      process.emitExit({ exitCode: 0, signal: 0 });
+
+      yield* waitFor(
+        Effect.map(getEvents, (events) => events.some((event) => event.type === "exited")),
+        "1200 millis",
+      );
+
+      const scope = yield* Effect.scope;
+      const attachEvents = yield* Ref.make<ReadonlyArray<TerminalAttachStreamEvent>>([]);
+      const unsubscribe = yield* manager.attachStream(
+        openInput({
+          env: {
+            T3CODE_WORKTREE_PATH: "/tmp/should-not-restart",
+          },
+          worktreePath: "/tmp/should-not-restart",
+        }),
+        (event) => Ref.update(attachEvents, (events) => [...events, event]),
+      );
+      yield* Scope.addFinalizer(scope, Effect.sync(unsubscribe));
+
+      const snapshot = (yield* Ref.get(attachEvents)).find((event) => event.type === "snapshot");
+      expect(snapshot).toBeDefined();
+      if (!snapshot || snapshot.type !== "snapshot") return;
+      assert.equal(snapshot.snapshot.status, "exited");
+      assert.equal(snapshot.snapshot.worktreePath, null);
+      expect(ptyAdapter.spawnInputs).toHaveLength(1);
+    }),
+  );
+
+  it.effect("restarts inactive sessions from attach only when requested", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter, getEvents } = yield* createManager();
+
+      yield* manager.open(openInput());
+      const process = ptyAdapter.processes[0];
+      expect(process).toBeDefined();
+      if (!process) return;
+
+      process.emitExit({ exitCode: 0, signal: 0 });
+
+      yield* waitFor(
+        Effect.map(getEvents, (events) => events.some((event) => event.type === "exited")),
+        "1200 millis",
+      );
+
+      const scope = yield* Effect.scope;
+      const attachEvents = yield* Ref.make<ReadonlyArray<TerminalAttachStreamEvent>>([]);
+      const unsubscribe = yield* manager.attachStream(
+        {
+          ...openInput({
+            env: {
+              T3CODE_WORKTREE_PATH: "/tmp/restart-requested",
+            },
+            worktreePath: "/tmp/restart-requested",
+          }),
+          restartIfNotRunning: true,
+        },
+        (event) => Ref.update(attachEvents, (events) => [...events, event]),
+      );
+      yield* Scope.addFinalizer(scope, Effect.sync(unsubscribe));
+
+      const snapshot = (yield* Ref.get(attachEvents)).find((event) => event.type === "snapshot");
+      expect(snapshot).toBeDefined();
+      if (!snapshot || snapshot.type !== "snapshot") return;
+      assert.equal(snapshot.snapshot.status, "running");
+      assert.equal(snapshot.snapshot.worktreePath, "/tmp/restart-requested");
+      expect(ptyAdapter.spawnInputs).toHaveLength(2);
+    }),
+  );
+
   const makeDirectory = (filePath: string) =>
     Effect.flatMap(Effect.service(FileSystem.FileSystem), (fs) =>
       fs.makeDirectory(filePath, { recursive: true }),

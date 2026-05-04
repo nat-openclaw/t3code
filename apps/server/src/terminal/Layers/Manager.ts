@@ -2043,7 +2043,7 @@ export const makeTerminalManagerWithOptions = Effect.fn("makeTerminalManagerWith
           const targetCols = input.cols ?? session.cols;
           const targetRows = input.rows ?? session.rows;
 
-          if (!session.process && input.cwd) {
+          if (!session.process && input.cwd && input.restartIfNotRunning === true) {
             return yield* openLocked({
               ...input,
               terminalId,

@@ -1,7 +1,7 @@
 import "../index.css";
 
 import { scopeThreadRef } from "@t3tools/client-runtime";
-import { ThreadId } from "@t3tools/contracts";
+import { ThreadId, type TerminalAttachStreamEvent } from "@t3tools/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 
@@ -18,7 +18,17 @@ const {
   terminalDisposeSpy: vi.fn(),
   fitAddonFitSpy: vi.fn(),
   fitAddonLoadSpy: vi.fn(),
-  environmentApiById: new Map<string, { terminal: { open: ReturnType<typeof vi.fn> } }>(),
+  environmentApiById: new Map<
+    string,
+    {
+      terminal: {
+        open: ReturnType<typeof vi.fn>;
+        attach: ReturnType<typeof vi.fn>;
+        write: ReturnType<typeof vi.fn>;
+        resize: ReturnType<typeof vi.fn>;
+      };
+    }
+  >(),
   readEnvironmentApiMock: vi.fn((environmentId: string) => environmentApiById.get(environmentId)),
   readLocalApiMock: vi.fn<
     () =>
@@ -124,21 +134,33 @@ import { TerminalViewport } from "./ThreadTerminalDrawer";
 const THREAD_ID = ThreadId.make("thread-terminal-browser");
 
 function createEnvironmentApi() {
+  const snapshot = {
+    threadId: THREAD_ID,
+    terminalId: "term-1",
+    cwd: "/repo/project",
+    worktreePath: null,
+    status: "running" as const,
+    pid: 123,
+    history: "",
+    exitCode: null,
+    exitSignal: null,
+    label: "Terminal 1",
+    updatedAt: "2026-04-07T00:00:00.000Z",
+  };
+
   return {
     terminal: {
-      open: vi.fn(async () => ({
-        threadId: THREAD_ID,
-        terminalId: "term-1",
-        cwd: "/repo/project",
-        worktreePath: null,
-        status: "running" as const,
-        pid: 123,
-        history: "",
-        exitCode: null,
-        exitSignal: null,
-        label: "Terminal 1",
-        updatedAt: "2026-04-07T00:00:00.000Z",
-      })),
+      open: vi.fn(async () => snapshot),
+      attach: vi.fn(
+        (
+          _input: unknown,
+          listener: (event: TerminalAttachStreamEvent) => void,
+          _options?: unknown,
+        ) => {
+          listener({ type: "snapshot", snapshot });
+          return vi.fn();
+        },
+      ),
       write: vi.fn(async () => undefined),
       resize: vi.fn(async () => undefined),
     },
@@ -237,7 +259,7 @@ describe("TerminalViewport", () => {
     }
   });
 
-  it("reopens the terminal when the scoped thread reference changes", async () => {
+  it("reattaches the terminal when the scoped thread reference changes", async () => {
     const environmentA = createEnvironmentApi();
     const environmentB = createEnvironmentApi();
     environmentApiById.set("environment-a", environmentA);
@@ -249,7 +271,7 @@ describe("TerminalViewport", () => {
 
     try {
       await vi.waitFor(() => {
-        expect(environmentA.terminal.open).toHaveBeenCalledTimes(1);
+        expect(environmentA.terminal.attach).toHaveBeenCalledTimes(1);
       });
 
       await mounted.rerender({
@@ -257,7 +279,7 @@ describe("TerminalViewport", () => {
       });
 
       await vi.waitFor(() => {
-        expect(environmentB.terminal.open).toHaveBeenCalledTimes(1);
+        expect(environmentB.terminal.attach).toHaveBeenCalledTimes(1);
       });
       expect(terminalDisposeSpy).toHaveBeenCalledTimes(1);
     } finally {
@@ -265,7 +287,7 @@ describe("TerminalViewport", () => {
     }
   });
 
-  it("does not reopen the terminal when the scoped thread reference values stay the same", async () => {
+  it("does not reattach the terminal when the scoped thread reference values stay the same", async () => {
     const environment = createEnvironmentApi();
     environmentApiById.set("environment-a", environment);
 
@@ -275,7 +297,7 @@ describe("TerminalViewport", () => {
 
     try {
       await vi.waitFor(() => {
-        expect(environment.terminal.open).toHaveBeenCalledTimes(1);
+        expect(environment.terminal.attach).toHaveBeenCalledTimes(1);
       });
 
       await mounted.rerender({
@@ -283,7 +305,7 @@ describe("TerminalViewport", () => {
       });
 
       await vi.waitFor(() => {
-        expect(environment.terminal.open).toHaveBeenCalledTimes(1);
+        expect(environment.terminal.attach).toHaveBeenCalledTimes(1);
       });
       expect(terminalDisposeSpy).not.toHaveBeenCalled();
     } finally {

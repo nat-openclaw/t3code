@@ -1953,9 +1953,9 @@ describe("ChatView timeline estimator parity (full app)", () => {
     try {
       await vi.waitFor(
         () => {
-          const openRequest = wsRequests.find(
-            (request) => request._tag === WS_METHODS.terminalOpen,
-          ) as
+          const attachRequest = wsRequests
+            .toReversed()
+            .find((request) => request._tag === WS_METHODS.terminalAttach) as
             | {
                 _tag: string;
                 cwd?: string;
@@ -1963,15 +1963,15 @@ describe("ChatView timeline estimator parity (full app)", () => {
                 env?: Record<string, string>;
               }
             | undefined;
-          expect(openRequest).toMatchObject({
-            _tag: WS_METHODS.terminalOpen,
+          expect(attachRequest).toMatchObject({
+            _tag: WS_METHODS.terminalAttach,
             cwd: "/repo/project",
             worktreePath: null,
             env: {
               T3CODE_PROJECT_ROOT: "/repo/project",
             },
           });
-          expect(openRequest?.env?.T3CODE_WORKTREE_PATH).toBeUndefined();
+          expect(attachRequest?.env?.T3CODE_WORKTREE_PATH).toBeUndefined();
         },
         { timeout: 8_000, interval: 16 },
       );

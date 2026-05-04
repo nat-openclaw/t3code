@@ -509,6 +509,7 @@ export function ThreadTerminalRouteScreen() {
           cols: lastGridSize.cols,
           rows: lastGridSize.rows,
           env: pendingLaunch?.env,
+          ...(pendingLaunch ? { restartIfNotRunning: true } : {}),
         },
         onEvent: logAttachStreamEvent,
         onSnapshot: () => {
