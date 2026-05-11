@@ -104,24 +104,24 @@ describe("resolveWslHomeUncPath", () => {
   ];
 
   it("uses the configured distro when one is selected", () => {
-    expect(resolveWslHomeUncPath({ enabled: true, distro: "Ubuntu" }, distros)).toBe(
+    expect(resolveWslHomeUncPath({ distro: "Ubuntu" }, distros)).toBe(
       "\\\\wsl.localhost\\Ubuntu\\home",
     );
   });
 
   it("uses the actual default distro when config uses the WSL default", () => {
-    expect(resolveWslHomeUncPath({ enabled: true, distro: null }, distros)).toBe(
+    expect(resolveWslHomeUncPath({ distro: null }, distros)).toBe(
       "\\\\wsl.localhost\\Debian\\home",
     );
   });
 
   it("omits the default path when no default distro is known", () => {
-    expect(resolveWslHomeUncPath({ enabled: true, distro: null }, [])).toBeNull();
+    expect(resolveWslHomeUncPath({ distro: null }, [])).toBeNull();
   });
 });
 
 describe("resolveWslPickFolderDefaultPath", () => {
-  const config = { enabled: true, distro: null };
+  const config = { distro: null };
   const distros = [{ name: "Debian", isDefault: true, version: 2 as const }];
 
   it("uses WSL home when no initial path is provided", () => {

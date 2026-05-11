@@ -5,11 +5,8 @@ export interface WslDistro {
 }
 
 export interface WslConfig {
-  readonly enabled: boolean;
   readonly distro: string | null;
 }
-
-export const DEFAULT_WSL_CONFIG: WslConfig = { enabled: false, distro: null };
 
 // Literal space — \s would also match \n/\t/\r and corrupt UNC paths like \\wsl.localhost\<distro>\...
 // Trailing char must also be \w so hand-edited config like "Ubuntu " / "Ubuntu-" / "Ubuntu." rejects.

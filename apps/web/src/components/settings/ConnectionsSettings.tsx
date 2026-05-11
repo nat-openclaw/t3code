@@ -2457,33 +2457,40 @@ export function ConnectionsSettings() {
       ]);
     };
 
+    // Wrap the whole flow (incl. error recovery) in suppressReconnect so the
+    // catch-block reauth doesn't surface transient reconnect/offline toasts
+    // on top of the error toast the user is reading.
     try {
-      await suppressReconnect(() => Promise.race([runSwap(), flowTimeout]));
+      await suppressReconnect(async () => {
+        try {
+          await Promise.race([runSwap(), flowTimeout]);
 
-      setPendingDesktopWslSelection(null);
-      toastManager.add({
-        type: "success",
-        title: "Backend restarted",
-        description:
-          target.mode === "wsl"
-            ? `The local backend is now running inside ${target.distro ?? "the default WSL distro"}.`
-            : "The local backend is now running on Windows.",
+          setPendingDesktopWslSelection(null);
+          toastManager.add({
+            type: "success",
+            title: "Backend restarted",
+            description:
+              target.mode === "wsl"
+                ? `The local backend is now running inside ${target.distro ?? "the default WSL distro"}.`
+                : "The local backend is now running on Windows.",
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Failed to update WSL backend.";
+          setDesktopWslError(message);
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Could not change backend mode",
+              description: message,
+            }),
+          );
+          await reauthenticatePrimaryEnvironment().catch(() => undefined);
+          await desktopBridge
+            .getWslState()
+            .then((state) => setDesktopWslState(state))
+            .catch(() => undefined);
+        }
       });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to update WSL backend.";
-      setDesktopWslError(message);
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: "Could not change backend mode",
-          description: message,
-        }),
-      );
-      await reauthenticatePrimaryEnvironment().catch(() => undefined);
-      await desktopBridge
-        .getWslState()
-        .then((state) => setDesktopWslState(state))
-        .catch(() => undefined);
     } finally {
       // Clear the global timer on every path so it can't fire after the flow
       // has settled and reject an unreferenced promise.
