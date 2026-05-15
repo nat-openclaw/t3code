@@ -17,7 +17,7 @@ import {
   SshLaunchError,
   SshPairingError,
   SshPasswordPromptError,
-  SshReadinessError,
+  type SshReadinessError,
 } from "@t3tools/ssh/errors";
 import { SshEnvironmentManager, type RemoteT3RunnerOptions } from "@t3tools/ssh/tunnel";
 import * as Context from "effect/Context";
