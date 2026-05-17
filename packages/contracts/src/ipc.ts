@@ -216,7 +216,17 @@ export const DesktopUpdateCheckResultSchema = Schema.Struct({
   state: DesktopUpdateStateSchema,
 });
 
+// Stable id for the Windows-native primary backend. Desktop side wraps
+// this with a brand inside DesktopBackendManager; web side keeps it as
+// a plain string so the env-runtime can compare against it without
+// importing brand machinery from the desktop package.
+export const PRIMARY_LOCAL_ENVIRONMENT_ID = "primary";
+
 export interface DesktopEnvironmentBootstrap {
+  // Stable backend instance id (e.g. "primary" or "wsl:ubuntu"). The
+  // web env runtime keys local environments off this so projects
+  // routed to a specific backend reopen against the same one.
+  id: string;
   label: string;
   httpBaseUrl: string | null;
   wsBaseUrl: string | null;
@@ -224,6 +234,7 @@ export interface DesktopEnvironmentBootstrap {
 }
 
 export const DesktopEnvironmentBootstrapSchema = Schema.Struct({
+  id: Schema.String,
   label: Schema.String,
   httpBaseUrl: Schema.NullOr(Schema.String),
   wsBaseUrl: Schema.NullOr(Schema.String),
@@ -401,7 +412,10 @@ export const DesktopWslStateSchema = Schema.Struct({
 
 export interface DesktopBridge {
   getAppBranding: () => DesktopAppBranding | null;
-  getLocalEnvironmentBootstrap: () => DesktopEnvironmentBootstrap | null;
+  // One bootstrap per pool instance currently registered with bootstrap
+  // info (omits instances whose backend hasn't produced a config yet).
+  // The primary backend is identified by id === PRIMARY_LOCAL_ENVIRONMENT_ID.
+  getLocalEnvironmentBootstraps: () => readonly DesktopEnvironmentBootstrap[];
   getClientSettings: () => Promise<ClientSettings | null>;
   setClientSettings: (settings: ClientSettings) => Promise<void>;
   getSavedEnvironmentRegistry: () => Promise<readonly PersistedSavedEnvironmentRecord[]>;

@@ -27,12 +27,12 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     }
     return result as ReturnType<DesktopBridge["getAppBranding"]>;
   },
-  getLocalEnvironmentBootstrap: () => {
-    const result = ipcRenderer.sendSync(IpcChannels.GET_LOCAL_ENVIRONMENT_BOOTSTRAP_CHANNEL);
-    if (typeof result !== "object" || result === null) {
-      return null;
+  getLocalEnvironmentBootstraps: () => {
+    const result = ipcRenderer.sendSync(IpcChannels.GET_LOCAL_ENVIRONMENT_BOOTSTRAPS_CHANNEL);
+    if (!Array.isArray(result)) {
+      return [];
     }
-    return result as ReturnType<DesktopBridge["getLocalEnvironmentBootstrap"]>;
+    return result as ReturnType<DesktopBridge["getLocalEnvironmentBootstraps"]>;
   },
   getClientSettings: () => ipcRenderer.invoke(IpcChannels.GET_CLIENT_SETTINGS_CHANNEL),
   setClientSettings: (settings) =>

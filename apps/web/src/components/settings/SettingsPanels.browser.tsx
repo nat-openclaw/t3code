@@ -360,12 +360,15 @@ const createDesktopBridgeStub = (overrides?: {
 
   return {
     getAppBranding: vi.fn().mockReturnValue(null),
-    getLocalEnvironmentBootstrap: () => ({
-      label: "Local environment",
-      httpBaseUrl: "http://127.0.0.1:3773",
-      wsBaseUrl: "ws://127.0.0.1:3773",
-      bootstrapToken: "desktop-bootstrap-token",
-    }),
+    getLocalEnvironmentBootstraps: () => [
+      {
+        id: "primary",
+        label: "Windows",
+        httpBaseUrl: "http://127.0.0.1:3773",
+        wsBaseUrl: "ws://127.0.0.1:3773",
+        bootstrapToken: "desktop-bootstrap-token",
+      },
+    ],
     getClientSettings: vi.fn().mockResolvedValue(null),
     setClientSettings: vi.fn().mockResolvedValue(undefined),
     getSavedEnvironmentRegistry: vi.fn().mockResolvedValue([]),

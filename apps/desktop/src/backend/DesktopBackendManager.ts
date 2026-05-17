@@ -46,6 +46,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import {
   DesktopBackendBootstrap,
   type DesktopBackendBootstrap as DesktopBackendBootstrapValue,
+  PRIMARY_LOCAL_ENVIRONMENT_ID,
 } from "@t3tools/contracts";
 
 import * as DesktopObservability from "../app/DesktopObservability.ts";
@@ -144,7 +145,9 @@ export interface DesktopBackendSnapshot {
 export type BackendInstanceId = string & Brand.Brand<"BackendInstanceId">;
 export const BackendInstanceId = Brand.nominal<BackendInstanceId>();
 
-export const PRIMARY_INSTANCE_ID: BackendInstanceId = BackendInstanceId("primary");
+export const PRIMARY_INSTANCE_ID: BackendInstanceId = BackendInstanceId(
+  PRIMARY_LOCAL_ENVIRONMENT_ID,
+);
 
 // One pooled backend instance. Same lifecycle surface as the legacy
 // `DesktopBackendManagerShape`; the id and label give the pool registry

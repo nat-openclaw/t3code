@@ -4,6 +4,7 @@ import {
   DesktopEnvironmentBootstrapSchema,
   DesktopThemeSchema,
   PickFolderOptionsSchema,
+  type DesktopEnvironmentBootstrap,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -47,24 +48,31 @@ export const getAppBranding = makeSyncIpcMethod({
   }),
 });
 
-export const getLocalEnvironmentBootstrap = makeSyncIpcMethod({
-  channel: IpcChannels.GET_LOCAL_ENVIRONMENT_BOOTSTRAP_CHANNEL,
-  result: Schema.NullOr(DesktopEnvironmentBootstrapSchema),
-  handler: Effect.fn("desktop.ipc.window.getLocalEnvironmentBootstrap")(function* () {
+export const getLocalEnvironmentBootstraps = makeSyncIpcMethod({
+  channel: IpcChannels.GET_LOCAL_ENVIRONMENT_BOOTSTRAPS_CHANNEL,
+  result: Schema.Array(DesktopEnvironmentBootstrapSchema),
+  handler: Effect.fn("desktop.ipc.window.getLocalEnvironmentBootstraps")(function* () {
     const pool = yield* DesktopBackendPool.DesktopBackendPool;
-    const primaryBackend = yield* pool.primary;
-    const config = yield* primaryBackend.currentConfig;
-    return Option.match(config, {
-      onNone: () => null,
-      onSome: ({ bootstrap, httpBaseUrl }) => ({
-        label: "Local environment",
+    const instances = yield* pool.list;
+    const bootstraps: DesktopEnvironmentBootstrap[] = [];
+    for (const instance of instances) {
+      const config = yield* instance.currentConfig;
+      // Skip instances that haven't produced a config yet (e.g. WSL
+      // backend mid-registration, before its first start cycle). They'll
+      // appear on the next IPC call once they've started.
+      if (Option.isNone(config)) continue;
+      const { bootstrap, httpBaseUrl } = config.value;
+      bootstraps.push({
+        id: instance.id,
+        label: instance.label,
         httpBaseUrl: httpBaseUrl.href,
         wsBaseUrl: toWebSocketBaseUrl(httpBaseUrl),
         ...(bootstrap.desktopBootstrapToken
           ? { bootstrapToken: bootstrap.desktopBootstrapToken }
           : {}),
-      }),
-    });
+      });
+    }
+    return bootstraps;
   }),
 });
 

@@ -171,7 +171,7 @@ function createLocalStorageStub(): Storage {
 function makeDesktopBridge(overrides: Partial<DesktopBridge> = {}): DesktopBridge {
   return {
     getAppBranding: () => null,
-    getLocalEnvironmentBootstrap: () => null,
+    getLocalEnvironmentBootstraps: () => [],
     getClientSettings: async () => null,
     setClientSettings: async () => undefined,
     getSavedEnvironmentRegistry: async () => [],
