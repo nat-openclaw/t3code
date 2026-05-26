@@ -304,11 +304,11 @@ export function aggregateTraceDiagnostics(
       }
 
       if (Array.isArray(parsed.events)) {
-        for (const rawEvent of parsed.events) {
-          const eventOption = decodeTraceEvent(rawEvent);
+        for (const rawTraceEvent of parsed.events) {
+          const eventOption = decodeTraceEvent(rawTraceEvent);
           if (Option.isNone(eventOption)) continue;
-          const rawEvent = eventOption.value;
-          const attributes = readEventAttributes(rawEvent);
+          const event = eventOption.value;
+          const attributes = readEventAttributes(event);
           const levelOption = toStringValue(attributes["effect.logLevel"]);
           if (Option.isNone(levelOption)) continue;
           const level = levelOption.value;
@@ -324,9 +324,9 @@ export function aggregateTraceDiagnostics(
             continue;
           }
 
-          const seenAt = Option.getOrElse(unixNanoToDateTime(rawEvent.timeUnixNano), () => endedAt);
+          const seenAt = Option.getOrElse(unixNanoToDateTime(event.timeUnixNano), () => endedAt);
           const message = Option.getOrElse(
-            Option.map(toStringValue(rawEvent.name), (value) => value.trim()),
+            Option.map(toStringValue(event.name), (value) => value.trim()),
             () => "Log event",
           );
           latestWarningAndErrorLogs.push({
