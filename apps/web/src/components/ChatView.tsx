@@ -3758,6 +3758,26 @@ export default function ChatView(props: ChatViewProps) {
     void onRevertToTurnCountRef.current(targetTurnCount);
   }, []);
 
+  const onImplementPlanInNewThreadForComposer = useEventCallback(onImplementPlanInNewThread);
+  const onRespondToApprovalForComposer = useEventCallback(onRespondToApproval);
+  const onSelectActivePendingUserInputOptionForComposer = useEventCallback(
+    onSelectActivePendingUserInputOption,
+  );
+  const onAdvanceActivePendingUserInputForComposer = useEventCallback(
+    onAdvanceActivePendingUserInput,
+  );
+  const onPreviousActivePendingUserInputQuestionForComposer = useEventCallback(
+    onPreviousActivePendingUserInputQuestion,
+  );
+  const onChangeActivePendingUserInputCustomAnswerForComposer = useEventCallback(
+    onChangeActivePendingUserInputCustomAnswer,
+  );
+  const onProviderModelSelectForComposer = useEventCallback(onProviderModelSelect);
+  const toggleInteractionModeForComposer = useEventCallback(toggleInteractionMode);
+  const handleRuntimeModeChangeForComposer = useEventCallback(handleRuntimeModeChange);
+  const handleInteractionModeChangeForComposer = useEventCallback(handleInteractionModeChange);
+  const togglePlanSidebarForComposer = useEventCallback(togglePlanSidebar);
+
   // Empty state: no active thread
   if (!activeThread) {
     return <NoActiveThreadState />;
@@ -3924,21 +3944,23 @@ export default function ChatView(props: ChatViewProps) {
                   scheduleStickToBottom={scrollToEnd}
                   onSend={onSend}
                   onInterrupt={onInterrupt}
-                  onImplementPlanInNewThread={onImplementPlanInNewThread}
-                  onRespondToApproval={onRespondToApproval}
-                  onSelectActivePendingUserInputOption={onSelectActivePendingUserInputOption}
-                  onAdvanceActivePendingUserInput={onAdvanceActivePendingUserInput}
+                  onImplementPlanInNewThread={onImplementPlanInNewThreadForComposer}
+                  onRespondToApproval={onRespondToApprovalForComposer}
+                  onSelectActivePendingUserInputOption={
+                    onSelectActivePendingUserInputOptionForComposer
+                  }
+                  onAdvanceActivePendingUserInput={onAdvanceActivePendingUserInputForComposer}
                   onPreviousActivePendingUserInputQuestion={
-                    onPreviousActivePendingUserInputQuestion
+                    onPreviousActivePendingUserInputQuestionForComposer
                   }
                   onChangeActivePendingUserInputCustomAnswer={
-                    onChangeActivePendingUserInputCustomAnswer
+                    onChangeActivePendingUserInputCustomAnswerForComposer
                   }
-                  onProviderModelSelect={onProviderModelSelect}
-                  toggleInteractionMode={toggleInteractionMode}
-                  handleRuntimeModeChange={handleRuntimeModeChange}
-                  handleInteractionModeChange={handleInteractionModeChange}
-                  togglePlanSidebar={togglePlanSidebar}
+                  onProviderModelSelect={onProviderModelSelectForComposer}
+                  toggleInteractionMode={toggleInteractionModeForComposer}
+                  handleRuntimeModeChange={handleRuntimeModeChangeForComposer}
+                  handleInteractionModeChange={handleInteractionModeChangeForComposer}
+                  togglePlanSidebar={togglePlanSidebarForComposer}
                   focusComposer={focusComposer}
                   scheduleComposerFocus={scheduleComposerFocus}
                   setThreadError={setThreadError}
