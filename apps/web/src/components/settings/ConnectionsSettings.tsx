@@ -2558,7 +2558,37 @@ export function ConnectionsSettings() {
   }, [applyWslSettingChange, desktopBridge, pendingWslChange]);
 
   const renderWslRow = () => {
-    if (!desktopWslState || !desktopWslState.available) return null;
+    if (!desktopWslState) return null;
+    // WSL went unavailable while the user still has the WSL backend persisted
+    // (it may have been uninstalled or its distro removed). The desktop side
+    // falls back to the Windows backend, but the normal distro picker needs a
+    // live distro list it no longer has. Without a control here the user would
+    // be stranded on a WSL preference they can't clear, so render a recovery
+    // row that switches back to Windows. When WSL is unavailable AND unused,
+    // there's nothing to recover — keep the section hidden as before.
+    if (!desktopWslState.available) {
+      if (!desktopWslState.enabled && !desktopWslState.wslOnly) return null;
+      return (
+        <SettingsRow
+          title="WSL backend"
+          description="WSL is no longer available, so the Windows backend is running instead. Switch off the WSL backend to clear this preference."
+          status={
+            desktopWslError ? (
+              <span className="block text-destructive">{desktopWslError}</span>
+            ) : null
+          }
+          control={
+            <Button
+              variant="outline"
+              disabled={isUpdatingWslBackend}
+              onClick={() => handleSelectWslMode(BACKEND_VALUE_WSL_OFF)}
+            >
+              Switch to Windows
+            </Button>
+          }
+        />
+      );
+    }
     // Distro is null when the user wants the WSL default. Map it to the
     // real default's name so the Select highlights a real option; fall
     // back to the sentinel only when no distros are listed yet (the
