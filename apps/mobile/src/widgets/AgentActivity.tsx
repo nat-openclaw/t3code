@@ -5,7 +5,6 @@ import {
   type LiveActivityComponent,
   type LiveActivityLayout,
 } from "expo-widgets";
-import { formatAgentActivityUpdatedAtLabel } from "../features/agent-awareness/updatedAtLabel";
 
 type LiveActivityEnvironment = Parameters<LiveActivityComponent<AgentActivityProps>>[1];
 
@@ -38,7 +37,7 @@ export interface AgentActivityProps {
   readonly activities: ReadonlyArray<AgentActivityRowProps>;
 }
 
-function AgentActivity(
+export function AgentActivity(
   props: AgentActivityProps,
   environment: LiveActivityEnvironment,
 ): LiveActivityLayout {
@@ -47,7 +46,16 @@ function AgentActivity(
   const row0 = props.activities[0];
   const row1 = props.activities[1];
   const row2 = props.activities[2];
-  const updatedAt = formatAgentActivityUpdatedAtLabel(props.updatedAt);
+  const updatedAtMatch = /^\d{4}-\d{2}-\d{2}T(\d{2}):(\d{2}):/.exec(props.updatedAt);
+  const updatedAtHours24 = Number(updatedAtMatch?.[1]);
+  const updatedAtMinutes = updatedAtMatch?.[2];
+  const updatedAt =
+    Number.isInteger(updatedAtHours24) &&
+    updatedAtHours24 >= 0 &&
+    updatedAtHours24 <= 23 &&
+    updatedAtMinutes
+      ? `${updatedAtHours24 % 12 || 12}:${updatedAtMinutes}`
+      : "now";
   const activeLabel = `${props.activeCount} active`;
   const isLight = environment.colorScheme === "light";
   const primaryForeground = isLight ? "#0f172a" : "#ffffff";
