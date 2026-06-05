@@ -111,4 +111,39 @@ layer("ProjectionThreadMessageRepository", (it) => {
       assert.deepEqual(rows[0]?.attachments, []);
     }),
   );
+
+  it.effect("preserves an assistant phase when a later streaming upsert omits it", () =>
+    Effect.gen(function* () {
+      const repository = yield* ProjectionThreadMessageRepository;
+      const threadId = ThreadId.make("thread-preserve-assistant-phase");
+      const messageId = MessageId.make("message-preserve-assistant-phase");
+      const createdAt = "2026-06-05T00:00:00.000Z";
+
+      yield* repository.upsert({
+        messageId,
+        threadId,
+        turnId: null,
+        role: "assistant",
+        text: "done",
+        assistantPhase: "final_answer",
+        isStreaming: false,
+        createdAt,
+        updatedAt: "2026-06-05T00:00:01.000Z",
+      });
+
+      yield* repository.upsert({
+        messageId,
+        threadId,
+        turnId: null,
+        role: "assistant",
+        text: "done",
+        isStreaming: false,
+        createdAt,
+        updatedAt: "2026-06-05T00:00:02.000Z",
+      });
+
+      const rows = yield* repository.listByThreadId({ threadId });
+      assert.equal(rows[0]?.assistantPhase, "final_answer");
+    }),
+  );
 });

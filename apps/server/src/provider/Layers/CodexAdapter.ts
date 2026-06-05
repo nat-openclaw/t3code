@@ -476,6 +476,7 @@ function mapItemLifecycle(
     type: lifecycle,
     payload: {
       itemType,
+      ...(item.type === "agentMessage" && item.phase ? { messagePhase: item.phase } : {}),
       ...(status ? { status } : {}),
       ...(itemTitle(itemType) ? { title: itemTitle(itemType) } : {}),
       ...(detail ? { detail } : {}),

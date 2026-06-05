@@ -183,6 +183,7 @@ function mapMessage(environmentId: EnvironmentId, message: OrchestrationMessage)
     id: message.id,
     role: message.role,
     text: message.text,
+    ...(message.assistantPhase !== undefined ? { assistantPhase: message.assistantPhase } : {}),
     turnId: message.turnId,
     createdAt: message.createdAt,
     streaming: message.streaming,
@@ -254,6 +255,7 @@ function mapThread(thread: OrchestrationThread, environmentId: EnvironmentId): T
     archivedAt: thread.archivedAt,
     updatedAt: thread.updatedAt,
     latestTurn: thread.latestTurn,
+    turns: [...(thread.turns ?? [])],
     pendingSourceProposedPlan: thread.latestTurn?.sourceProposedPlan,
     branch: thread.branch,
     worktreePath: thread.worktreePath,
@@ -885,6 +887,19 @@ function buildLatestTurn(params: {
   };
 }
 
+function upsertThreadTurn(
+  turns: Thread["turns"],
+  turn: Thread["latestTurn"],
+): NonNullable<Thread["turns"]> {
+  const existingTurns = turns ?? [];
+  if (turn === null) {
+    return existingTurns;
+  }
+  return [...existingTurns.filter((entry) => entry.turnId !== turn.turnId), turn].toSorted(
+    (left, right) => left.requestedAt.localeCompare(right.requestedAt),
+  );
+}
+
 function rebindTurnDiffSummariesForAssistantMessage(
   turnDiffSummaries: ReadonlyArray<TurnDiffSummary>,
   turnId: TurnId,
@@ -1272,6 +1287,7 @@ function applyEnvironmentOrchestrationEvent(
           branch: event.payload.branch,
           worktreePath: event.payload.worktreePath,
           latestTurn: null,
+          turns: [],
           createdAt: event.payload.createdAt,
           updatedAt: event.payload.updatedAt,
           archivedAt: null,
@@ -1353,17 +1369,19 @@ function applyEnvironmentOrchestrationEvent(
         if (latestTurn === null || latestTurn.turnId !== event.payload.turnId) {
           return thread;
         }
+        const interruptedTurn = buildLatestTurn({
+          previous: latestTurn,
+          turnId: event.payload.turnId,
+          state: "interrupted",
+          requestedAt: latestTurn.requestedAt,
+          startedAt: latestTurn.startedAt ?? event.payload.createdAt,
+          completedAt: latestTurn.completedAt ?? event.payload.createdAt,
+          assistantMessageId: latestTurn.assistantMessageId,
+        });
         return {
           ...thread,
-          latestTurn: buildLatestTurn({
-            previous: latestTurn,
-            turnId: event.payload.turnId,
-            state: "interrupted",
-            requestedAt: latestTurn.requestedAt,
-            startedAt: latestTurn.startedAt ?? event.payload.createdAt,
-            completedAt: latestTurn.completedAt ?? event.payload.createdAt,
-            assistantMessageId: latestTurn.assistantMessageId,
-          }),
+          latestTurn: interruptedTurn,
+          turns: upsertThreadTurn(thread.turns, interruptedTurn),
           updatedAt: event.occurredAt,
         };
       });
@@ -1375,6 +1393,9 @@ function applyEnvironmentOrchestrationEvent(
           id: event.payload.messageId,
           role: event.payload.role,
           text: event.payload.text,
+          ...(event.payload.assistantPhase !== undefined
+            ? { assistantPhase: event.payload.assistantPhase }
+            : {}),
           ...(event.payload.attachments !== undefined
             ? { attachments: event.payload.attachments }
             : {}),
@@ -1396,6 +1417,9 @@ function applyEnvironmentOrchestrationEvent(
                         ? message.text
                         : entry.text,
                     streaming: message.streaming,
+                    ...(message.assistantPhase !== undefined
+                      ? { assistantPhase: message.assistantPhase }
+                      : {}),
                     ...(message.turnId !== undefined ? { turnId: message.turnId } : {}),
                     ...(message.streaming
                       ? entry.completedAt !== undefined
@@ -1455,16 +1479,14 @@ function applyEnvironmentOrchestrationEvent(
           messages: cappedMessages,
           turnDiffSummaries,
           latestTurn,
+          turns: upsertThreadTurn(thread.turns, latestTurn),
           updatedAt: event.occurredAt,
         };
       });
 
     case "thread.session-set":
-      return updateThreadState(state, event.payload.threadId, (thread) => ({
-        ...thread,
-        session: mapSession(event.payload.session),
-        error: sanitizeThreadErrorMessage(event.payload.session.lastError),
-        latestTurn:
+      return updateThreadState(state, event.payload.threadId, (thread) => {
+        const latestTurn =
           event.payload.session.status === "running" && event.payload.session.activeTurnId !== null
             ? buildLatestTurn({
                 previous: thread.latestTurn,
@@ -1485,9 +1507,16 @@ function applyEnvironmentOrchestrationEvent(
                     : null,
                 sourceProposedPlan: thread.pendingSourceProposedPlan,
               })
-            : thread.latestTurn,
-        updatedAt: event.occurredAt,
-      }));
+            : thread.latestTurn;
+        return {
+          ...thread,
+          session: mapSession(event.payload.session),
+          error: sanitizeThreadErrorMessage(event.payload.session.lastError),
+          latestTurn,
+          turns: upsertThreadTurn(thread.turns, latestTurn),
+          updatedAt: event.occurredAt,
+        };
+      });
 
     case "thread.session-stop-requested":
       return updateThreadState(state, event.payload.threadId, (thread) =>
@@ -1569,6 +1598,7 @@ function applyEnvironmentOrchestrationEvent(
           ...thread,
           turnDiffSummaries,
           latestTurn,
+          turns: upsertThreadTurn(thread.turns, latestTurn),
           updatedAt: event.occurredAt,
         };
       });
@@ -1606,6 +1636,7 @@ function applyEnvironmentOrchestrationEvent(
           messages,
           proposedPlans,
           activities,
+          turns: thread.turns?.filter((turn) => retainedTurnIds.has(turn.turnId)) ?? [],
           pendingSourceProposedPlan: undefined,
           latestTurn:
             latestCheckpoint === null

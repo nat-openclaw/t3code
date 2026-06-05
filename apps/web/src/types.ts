@@ -1,5 +1,6 @@
 import type {
   EnvironmentId,
+  AssistantMessagePhase,
   ModelSelection,
   OrchestrationLatestTurn,
   OrchestrationProposedPlanId,
@@ -47,6 +48,7 @@ export interface ChatMessage {
   id: MessageId;
   role: "user" | "assistant" | "system";
   text: string;
+  assistantPhase?: AssistantMessagePhase;
   attachments?: ChatAttachment[];
   turnId?: TurnId | null;
   createdAt: string;
@@ -110,6 +112,7 @@ export interface Thread {
   archivedAt: string | null;
   updatedAt?: string | undefined;
   latestTurn: OrchestrationLatestTurn | null;
+  turns?: OrchestrationLatestTurn[];
   pendingSourceProposedPlan?: OrchestrationLatestTurn["sourceProposedPlan"];
   branch: string | null;
   worktreePath: string | null;

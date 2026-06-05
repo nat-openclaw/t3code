@@ -306,6 +306,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
               planId: "plan-1",
             },
           },
+          turns: [],
           createdAt: "2026-02-24T00:00:02.000Z",
           updatedAt: "2026-02-24T00:00:03.000Z",
           archivedAt: null,
@@ -437,8 +438,26 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
 
       const threadDetail = yield* snapshotQuery.getThreadDetailById(ThreadId.make("thread-1"));
       assert.equal(threadDetail._tag, "Some");
-      if (threadDetail._tag === "Some") {
-        assert.deepEqual(threadDetail.value, snapshot.threads[0]);
+      const snapshotThread = snapshot.threads[0];
+      assert.isDefined(snapshotThread);
+      if (threadDetail._tag === "Some" && snapshotThread) {
+        assert.deepEqual(threadDetail.value, {
+          ...snapshotThread,
+          turns: [
+            {
+              turnId: asTurnId("turn-1"),
+              state: "completed",
+              requestedAt: "2026-02-24T00:00:08.000Z",
+              startedAt: "2026-02-24T00:00:08.000Z",
+              completedAt: "2026-02-24T00:00:08.000Z",
+              assistantMessageId: asMessageId("message-1"),
+              sourceProposedPlan: {
+                threadId: ThreadId.make("thread-1"),
+                planId: "plan-1",
+              },
+            },
+          ],
+        });
       }
     }),
   );
@@ -1150,6 +1169,10 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
         assert.equal(threadDetail.value.latestTurn?.turnId, asTurnId("turn-running"));
         assert.equal(threadDetail.value.latestTurn?.state, "running");
         assert.equal(threadDetail.value.latestTurn?.startedAt, "2026-04-02T00:00:30.000Z");
+        assert.deepEqual(
+          threadDetail.value.turns?.map((turn) => turn.turnId),
+          [asTurnId("turn-completed"), asTurnId("turn-running")],
+        );
       }
     }),
   );

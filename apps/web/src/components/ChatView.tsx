@@ -50,7 +50,6 @@ import {
   parseStandaloneComposerSlashCommand,
 } from "../composer-logic";
 import {
-  deriveCompletionDividerBeforeEntryId,
   derivePendingApprovals,
   derivePendingUserInputs,
   derivePhase,
@@ -61,9 +60,7 @@ import {
   findLatestProposedPlan,
   deriveWorkLogEntries,
   hasActionableProposedPlan,
-  hasToolActivityForTurn,
   isLatestTurnSettled,
-  formatElapsed,
 } from "../session-logic";
 import { type LegendListRef } from "@legendapp/list/react";
 import {
@@ -1469,12 +1466,8 @@ export default function ChatView(props: ChatViewProps) {
   const phase = derivePhase(activeThread?.session ?? null);
   const threadActivities = activeThread?.activities ?? EMPTY_ACTIVITIES;
   const workLogEntries = useMemo(
-    () => deriveWorkLogEntries(threadActivities, activeLatestTurn?.turnId ?? undefined),
-    [activeLatestTurn?.turnId, threadActivities],
-  );
-  const latestTurnHasToolActivity = useMemo(
-    () => hasToolActivityForTurn(threadActivities, activeLatestTurn?.turnId),
-    [activeLatestTurn?.turnId, threadActivities],
+    () => deriveWorkLogEntries(threadActivities, undefined),
+    [threadActivities],
   );
   const pendingApprovals = useMemo(
     () => derivePendingApprovals(threadActivities),
@@ -1810,25 +1803,11 @@ export default function ChatView(props: ChatViewProps) {
     return byUserMessageId;
   }, [inferredCheckpointTurnCountByTurnId, timelineEntries, turnDiffSummaryByAssistantMessageId]);
 
-  const completionSummary = useMemo(() => {
-    if (!latestTurnSettled) return null;
-    if (!activeLatestTurn?.startedAt) return null;
-    if (!activeLatestTurn.completedAt) return null;
-    if (!latestTurnHasToolActivity) return null;
-
-    const elapsed = formatElapsed(activeLatestTurn.startedAt, activeLatestTurn.completedAt);
-    return elapsed ? `Worked for ${elapsed}` : null;
-  }, [
-    activeLatestTurn?.completedAt,
-    activeLatestTurn?.startedAt,
-    latestTurnHasToolActivity,
-    latestTurnSettled,
-  ]);
-  const completionDividerBeforeEntryId = useMemo(() => {
-    if (!latestTurnSettled) return null;
-    if (!completionSummary) return null;
-    return deriveCompletionDividerBeforeEntryId(timelineEntries, activeLatestTurn);
-  }, [activeLatestTurn, completionSummary, latestTurnSettled, timelineEntries]);
+  const timelineTurns = useMemo(() => {
+    const turns = activeThread?.turns ?? [];
+    if (!activeLatestTurn) return turns;
+    return [...turns.filter((turn) => turn.turnId !== activeLatestTurn.turnId), activeLatestTurn];
+  }, [activeLatestTurn, activeThread?.turns]);
   const gitCwd = activeProject
     ? projectScriptCwd({
         project: { cwd: activeProject.cwd },
@@ -3785,8 +3764,7 @@ export default function ChatView(props: ChatViewProps) {
               activeTurnStartedAt={activeWorkStartedAt}
               listRef={legendListRef}
               timelineEntries={timelineEntries}
-              completionDividerBeforeEntryId={completionDividerBeforeEntryId}
-              completionSummary={completionSummary}
+              turns={timelineTurns}
               turnDiffSummaryByAssistantMessageId={turnDiffSummaryByAssistantMessageId}
               activeThreadEnvironmentId={activeThread.environmentId}
               routeThreadKey={routeThreadKey}

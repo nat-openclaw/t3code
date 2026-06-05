@@ -1,6 +1,7 @@
 import {
   type EnvironmentId,
   type MessageId,
+  type OrchestrationLatestTurn,
   type ServerProviderSkill,
   type TurnId,
 } from "@t3tools/contracts";
@@ -28,6 +29,8 @@ import {
 import ChatMarkdown from "../ChatMarkdown";
 import {
   BotIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
   CheckIcon,
   CircleAlertIcon,
   EyeIcon,
@@ -97,6 +100,7 @@ interface TimelineRowSharedState {
   onRevertUserMessage: (messageId: MessageId) => void;
   onImageExpand: (preview: ExpandedImagePreview) => void;
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
+  onToggleTurnDetails: (turnId: TurnId) => void;
 }
 
 interface TimelineRowActivityState {
@@ -109,6 +113,7 @@ const TimelineRowActivityCtx = createContext<TimelineRowActivityState>(null!);
 const TIMELINE_LIST_HEADER = <div className="h-3 sm:h-4" />;
 const TIMELINE_LIST_FOOTER = <div className="h-3 sm:h-4" />;
 const EMPTY_TIMELINE_SKILLS: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">> = [];
+const EMPTY_TIMELINE_TURNS: ReadonlyArray<OrchestrationLatestTurn> = [];
 
 // ---------------------------------------------------------------------------
 // Props (public API)
@@ -121,8 +126,7 @@ interface MessagesTimelineProps {
   activeTurnStartedAt: string | null;
   listRef: React.RefObject<LegendListRef | null>;
   timelineEntries: ReturnType<typeof deriveTimelineEntries>;
-  completionDividerBeforeEntryId: string | null;
-  completionSummary: string | null;
+  turns?: ReadonlyArray<OrchestrationLatestTurn>;
   turnDiffSummaryByAssistantMessageId: Map<MessageId, TurnDiffSummary>;
   routeThreadKey: string;
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
@@ -150,8 +154,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   activeTurnStartedAt,
   listRef,
   timelineEntries,
-  completionDividerBeforeEntryId,
-  completionSummary,
+  turns = EMPTY_TIMELINE_TURNS,
   turnDiffSummaryByAssistantMessageId,
   routeThreadKey,
   onOpenTurnDiff,
@@ -167,12 +170,27 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   skills = EMPTY_TIMELINE_SKILLS,
   onIsAtEndChange,
 }: MessagesTimelineProps) {
+  const [expandedTurnIds, setExpandedTurnIds] = useState<ReadonlySet<TurnId>>(new Set());
+  useEffect(() => {
+    setExpandedTurnIds(new Set());
+  }, [routeThreadKey]);
+  const onToggleTurnDetails = useCallback((turnId: TurnId) => {
+    setExpandedTurnIds((existing) => {
+      const next = new Set(existing);
+      if (next.has(turnId)) {
+        next.delete(turnId);
+      } else {
+        next.add(turnId);
+      }
+      return next;
+    });
+  }, []);
   const rawRows = useMemo(
     () =>
       deriveMessagesTimelineRows({
         timelineEntries,
-        completionDividerBeforeEntryId,
-        completionSummary,
+        turns,
+        expandedTurnIds,
         isWorking,
         activeTurnInProgress,
         activeTurnId: activeTurnId ?? null,
@@ -182,8 +200,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       }),
     [
       timelineEntries,
-      completionDividerBeforeEntryId,
-      completionSummary,
+      turns,
+      expandedTurnIds,
       isWorking,
       activeTurnInProgress,
       activeTurnId,
@@ -231,6 +249,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onRevertUserMessage,
       onImageExpand,
       onOpenTurnDiff,
+      onToggleTurnDetails,
     }),
     [
       timestampFormat,
@@ -243,6 +262,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onRevertUserMessage,
       onImageExpand,
       onOpenTurnDiff,
+      onToggleTurnDetails,
     ],
   );
   const activityState = useMemo<TimelineRowActivityState>(
@@ -323,6 +343,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       data-message-role={row.kind === "message" ? row.message.role : undefined}
     >
       {row.kind === "work" ? <WorkGroupSection groupedEntries={row.groupedEntries} /> : null}
+      {row.kind === "turn-fold" ? <TurnFoldTimelineRow row={row} /> : null}
       {row.kind === "message" && row.message.role === "user" ? <UserTimelineRow row={row} /> : null}
       {row.kind === "message" && row.message.role === "assistant" ? (
         <AssistantTimelineRow row={row} />
@@ -332,6 +353,25 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
     </div>
   );
 });
+
+function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-fold" }> }) {
+  const ctx = use(TimelineRowCtx);
+  const Icon = row.expanded ? ChevronDownIcon : ChevronRightIcon;
+
+  return (
+    <div className="border-b border-border/60 pb-2">
+      <button
+        type="button"
+        className="flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+        aria-expanded={row.expanded}
+        onClick={() => ctx.onToggleTurnDetails(row.turnId)}
+      >
+        <span>{row.completionSummary}</span>
+        <Icon className="size-4" />
+      </button>
+    </div>
+  );
+}
 
 function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);

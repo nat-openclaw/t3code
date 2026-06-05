@@ -816,6 +816,11 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             turnId: event.payload.turnId,
             role: event.payload.role,
             text: nextText,
+            ...(event.payload.assistantPhase !== undefined
+              ? { assistantPhase: event.payload.assistantPhase }
+              : previousMessage?.assistantPhase !== undefined
+                ? { assistantPhase: previousMessage.assistantPhase }
+                : {}),
             ...(nextAttachments !== undefined ? { attachments: [...nextAttachments] } : {}),
             isStreaming: event.payload.streaming,
             createdAt: previousMessage?.createdAt ?? event.payload.createdAt,

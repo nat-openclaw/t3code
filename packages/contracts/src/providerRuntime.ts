@@ -1,6 +1,7 @@
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import {
+  AssistantMessagePhase,
   EventId,
   IsoDateTime,
   NonNegativeInt,
@@ -402,6 +403,7 @@ export type TurnDiffUpdatedPayload = typeof TurnDiffUpdatedPayload.Type;
 
 export const ItemLifecyclePayload = Schema.Struct({
   itemType: CanonicalItemType,
+  messagePhase: Schema.optional(AssistantMessagePhase),
   status: Schema.optional(RuntimeItemStatus),
   title: Schema.optional(TrimmedNonEmptyStringSchema),
   detail: Schema.optional(TrimmedNonEmptyStringSchema),

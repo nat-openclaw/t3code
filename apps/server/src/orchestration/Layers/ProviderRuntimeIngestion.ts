@@ -904,6 +904,7 @@ const make = Effect.gen(function* () {
     commandTag: string;
     finalDeltaCommandTag: string;
     fallbackText?: string;
+    assistantPhase?: "commentary" | "final_answer";
     hasProjectedMessage?: boolean;
   }) =>
     Effect.gen(function* () {
@@ -934,6 +935,7 @@ const make = Effect.gen(function* () {
           commandId: yield* providerCommandId(input.event, input.commandTag),
           threadId: input.threadId,
           messageId: input.messageId,
+          ...(input.assistantPhase ? { assistantPhase: input.assistantPhase } : {}),
           ...(input.turnId ? { turnId: input.turnId } : {}),
           createdAt: input.createdAt,
         });
@@ -1425,6 +1427,7 @@ const make = Effect.gen(function* () {
                 `assistant:${event.itemId ?? event.turnId ?? event.eventId}`,
               ),
               fallbackText: event.payload.detail,
+              messagePhase: event.payload.messagePhase,
             }
           : undefined;
       const proposedPlanCompletion =
@@ -1475,6 +1478,9 @@ const make = Effect.gen(function* () {
             hasProjectedMessage: existingAssistantMessage !== undefined,
             ...(assistantCompletion.fallbackText !== undefined && shouldApplyFallbackCompletionText
               ? { fallbackText: assistantCompletion.fallbackText }
+              : {}),
+            ...(assistantCompletion.messagePhase
+              ? { assistantPhase: assistantCompletion.messagePhase }
               : {}),
           });
 

@@ -260,6 +260,7 @@ export function projectEvent(
             branch: payload.branch,
             worktreePath: payload.worktreePath,
             latestTurn: null,
+            turns: [],
             createdAt: payload.createdAt,
             updatedAt: payload.updatedAt,
             archivedAt: null,
@@ -376,6 +377,9 @@ export function projectEvent(
             id: payload.messageId,
             role: payload.role,
             text: payload.text,
+            ...(payload.assistantPhase !== undefined
+              ? { assistantPhase: payload.assistantPhase }
+              : {}),
             ...(payload.attachments !== undefined ? { attachments: payload.attachments } : {}),
             turnId: payload.turnId,
             streaming: payload.streaming,
@@ -400,6 +404,9 @@ export function projectEvent(
                     streaming: message.streaming,
                     updatedAt: message.updatedAt,
                     turnId: message.turnId,
+                    ...(message.assistantPhase !== undefined
+                      ? { assistantPhase: message.assistantPhase }
+                      : {}),
                     ...(message.attachments !== undefined
                       ? { attachments: message.attachments }
                       : {}),

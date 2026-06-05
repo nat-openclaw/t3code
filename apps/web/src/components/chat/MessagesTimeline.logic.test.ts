@@ -205,6 +205,143 @@ describe("resolveAssistantMessageCopyState", () => {
 });
 
 describe("deriveMessagesTimelineRows", () => {
+  it("collapses completed turn work and commentary behind a worked-for row", () => {
+    const timelineEntries = [
+      {
+        id: "user-entry",
+        kind: "message" as const,
+        createdAt: "2026-06-05T00:00:00Z",
+        message: {
+          id: "user" as never,
+          role: "user" as const,
+          text: "Do the work",
+          turnId: null,
+          createdAt: "2026-06-05T00:00:00Z",
+          streaming: false,
+        },
+      },
+      {
+        id: "commentary-entry",
+        kind: "message" as const,
+        createdAt: "2026-06-05T00:00:01Z",
+        message: {
+          id: "commentary" as never,
+          role: "assistant" as const,
+          text: "Inspecting the implementation.",
+          assistantPhase: "commentary" as const,
+          turnId: "turn-1" as never,
+          createdAt: "2026-06-05T00:00:01Z",
+          completedAt: "2026-06-05T00:00:02Z",
+          streaming: false,
+        },
+      },
+      {
+        id: "work-entry",
+        kind: "work" as const,
+        createdAt: "2026-06-05T00:00:03Z",
+        entry: {
+          id: "work",
+          createdAt: "2026-06-05T00:00:03Z",
+          turnId: "turn-1" as never,
+          label: "Read file",
+          tone: "tool" as const,
+        },
+      },
+      {
+        id: "final-entry",
+        kind: "message" as const,
+        createdAt: "2026-06-05T00:00:10Z",
+        message: {
+          id: "final" as never,
+          role: "assistant" as const,
+          text: "Implemented.",
+          assistantPhase: "final_answer" as const,
+          turnId: "turn-1" as never,
+          createdAt: "2026-06-05T00:00:10Z",
+          completedAt: "2026-06-05T00:00:11Z",
+          streaming: false,
+        },
+      },
+    ];
+    const turn = {
+      turnId: "turn-1" as never,
+      state: "completed" as const,
+      requestedAt: "2026-06-05T00:00:00Z",
+      startedAt: "2026-06-05T00:00:00Z",
+      completedAt: "2026-06-05T00:00:11Z",
+      assistantMessageId: "final" as never,
+    };
+    const baseInput = {
+      timelineEntries,
+      turns: [turn],
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+    };
+
+    const collapsedRows = deriveMessagesTimelineRows(baseInput);
+    expect(collapsedRows.map((row) => row.id)).toEqual([
+      "user-entry",
+      "turn-fold:turn-1",
+      "final-entry",
+    ]);
+    expect(collapsedRows[1]).toMatchObject({
+      kind: "turn-fold",
+      completionSummary: "Worked for 11s",
+      expanded: false,
+      hiddenCount: 2,
+    });
+
+    const expandedRows = deriveMessagesTimelineRows({
+      ...baseInput,
+      expandedTurnIds: new Set(["turn-1" as never]),
+    });
+    expect(expandedRows.map((row) => row.id)).toEqual([
+      "user-entry",
+      "commentary-entry",
+      "work-entry",
+      "turn-fold:turn-1",
+      "final-entry",
+    ]);
+  });
+
+  it("keeps interrupted turn details visible", () => {
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: [
+        {
+          id: "commentary-entry",
+          kind: "message",
+          createdAt: "2026-06-05T00:00:01Z",
+          message: {
+            id: "commentary" as never,
+            role: "assistant",
+            text: "Still working",
+            turnId: "turn-1" as never,
+            createdAt: "2026-06-05T00:00:01Z",
+            streaming: false,
+          },
+        },
+      ],
+      turns: [
+        {
+          turnId: "turn-1" as never,
+          state: "interrupted",
+          requestedAt: "2026-06-05T00:00:00Z",
+          startedAt: "2026-06-05T00:00:00Z",
+          completedAt: "2026-06-05T00:00:02Z",
+          assistantMessageId: "commentary" as never,
+        },
+      ],
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+    });
+
+    expect(rows.map((row) => row.id)).toEqual(["commentary-entry"]);
+  });
+
   it("only enables assistant copy for the terminal assistant message in a turn", () => {
     const rows = deriveMessagesTimelineRows({
       timelineEntries: [

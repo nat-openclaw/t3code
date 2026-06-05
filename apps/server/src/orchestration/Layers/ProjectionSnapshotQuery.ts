@@ -1,4 +1,5 @@
 import {
+  AssistantMessagePhase,
   ChatAttachment,
   CheckpointRef,
   IsoDateTime,
@@ -70,6 +71,7 @@ const ProjectionProjectDbRowSchema = ProjectionProject.mapFields(
 const ProjectionThreadMessageDbRowSchema = ProjectionThreadMessage.mapFields(
   Struct.assign({
     isStreaming: Schema.Number,
+    assistantPhase: Schema.NullOr(AssistantMessagePhase),
     attachments: Schema.NullOr(Schema.fromJsonString(Schema.Array(ChatAttachment))),
   }),
 );
@@ -414,6 +416,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           turn_id AS "turnId",
           role,
           text,
+          assistant_phase AS "assistantPhase",
           attachments_json AS "attachments",
           is_streaming AS "isStreaming",
           created_at AS "createdAt",
@@ -777,6 +780,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           turn_id AS "turnId",
           role,
           text,
+          assistant_phase AS "assistantPhase",
           attachments_json AS "attachments",
           is_streaming AS "isStreaming",
           created_at AS "createdAt",
@@ -874,6 +878,28 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           AND threads.deleted_at IS NULL
           AND threads.archived_at IS NULL
         LIMIT 1
+      `,
+  });
+
+  const listTurnRowsByThread = SqlSchema.findAll({
+    Request: ThreadIdLookupInput,
+    Result: ProjectionLatestTurnDbRowSchema,
+    execute: ({ threadId }) =>
+      sql`
+        SELECT
+          thread_id AS "threadId",
+          turn_id AS "turnId",
+          state,
+          requested_at AS "requestedAt",
+          started_at AS "startedAt",
+          completed_at AS "completedAt",
+          assistant_message_id AS "assistantMessageId",
+          source_proposed_plan_thread_id AS "sourceProposedPlanThreadId",
+          source_proposed_plan_id AS "sourceProposedPlanId"
+        FROM projection_turns
+        WHERE thread_id = ${threadId}
+          AND turn_id IS NOT NULL
+        ORDER BY requested_at ASC, turn_id ASC
       `,
   });
 
@@ -1048,6 +1074,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   id: row.messageId,
                   role: row.role,
                   text: row.text,
+                  ...(row.assistantPhase !== null ? { assistantPhase: row.assistantPhase } : {}),
                   ...(row.attachments !== null ? { attachments: row.attachments } : {}),
                   turnId: row.turnId,
                   streaming: row.isStreaming === 1,
@@ -1903,6 +1930,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         activityRows,
         checkpointRows,
         latestTurnRow,
+        turnRows,
         sessionRow,
       ] = yield* Effect.all([
         getActiveThreadRowById({ threadId }).pipe(
@@ -1953,6 +1981,14 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             ),
           ),
         ),
+        listTurnRowsByThread({ threadId }).pipe(
+          Effect.mapError(
+            toPersistenceSqlOrDecodeError(
+              "ProjectionSnapshotQuery.getThreadDetailById:listTurns:query",
+              "ProjectionSnapshotQuery.getThreadDetailById:listTurns:decodeRows",
+            ),
+          ),
+        ),
         getThreadSessionRowByThread({ threadId }).pipe(
           Effect.mapError(
             toPersistenceSqlOrDecodeError(
@@ -1977,6 +2013,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         branch: threadRow.value.branch,
         worktreePath: threadRow.value.worktreePath,
         latestTurn: Option.isSome(latestTurnRow) ? mapLatestTurn(latestTurnRow.value) : null,
+        turns: turnRows.map(mapLatestTurn),
         createdAt: threadRow.value.createdAt,
         updatedAt: threadRow.value.updatedAt,
         archivedAt: threadRow.value.archivedAt,
@@ -1986,6 +2023,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             id: row.messageId,
             role: row.role,
             text: row.text,
+            ...(row.assistantPhase !== null ? { assistantPhase: row.assistantPhase } : {}),
             turnId: row.turnId,
             streaming: row.isStreaming === 1,
             createdAt: row.createdAt,

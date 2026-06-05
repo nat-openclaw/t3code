@@ -703,6 +703,7 @@ describe("ProviderRuntimeIngestion", () => {
       payload: {
         itemType: "assistant_message",
         status: "completed",
+        messagePhase: "final_answer",
       },
     });
 
@@ -1544,6 +1545,7 @@ describe("ProviderRuntimeIngestion", () => {
       payload: {
         itemType: "assistant_message",
         status: "completed",
+        messagePhase: "final_answer",
       },
     });
 
@@ -2183,6 +2185,7 @@ describe("ProviderRuntimeIngestion", () => {
       payload: {
         itemType: "assistant_message",
         status: "completed",
+        messagePhase: "final_answer",
       },
     });
     harness.emit({
@@ -2223,6 +2226,11 @@ describe("ProviderRuntimeIngestion", () => {
       );
     });
     expect(completionEvents).toHaveLength(1);
+    const completionEvent = completionEvents[0];
+    expect(completionEvent?.type).toBe("thread.message-sent");
+    if (completionEvent?.type === "thread.message-sent") {
+      expect(completionEvent.payload.assistantPhase).toBe("final_answer");
+    }
   });
 
   it("maps canonical request events into approval activities with requestKind", async () => {

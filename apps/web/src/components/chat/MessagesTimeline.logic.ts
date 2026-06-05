@@ -1,7 +1,7 @@
 import * as Equal from "effect/Equal";
-import { type TimelineEntry, type WorkLogEntry } from "../../session-logic";
+import { formatElapsed, type TimelineEntry, type WorkLogEntry } from "../../session-logic";
 import { type ChatMessage, type ProposedPlan, type TurnDiffSummary } from "../../types";
-import { type MessageId, type TurnId } from "@t3tools/contracts";
+import { type MessageId, type OrchestrationLatestTurn, type TurnId } from "@t3tools/contracts";
 
 export const MAX_VISIBLE_WORK_LOG_ENTRIES = 6;
 
@@ -18,6 +18,15 @@ export type MessagesTimelineRow =
       id: string;
       createdAt: string;
       groupedEntries: WorkLogEntry[];
+    }
+  | {
+      kind: "turn-fold";
+      id: string;
+      createdAt: string;
+      turnId: TurnId;
+      completionSummary: string;
+      expanded: boolean;
+      hiddenCount: number;
     }
   | {
       kind: "message";
@@ -86,6 +95,7 @@ export function resolveAssistantMessageCopyState({
 
 function deriveTerminalAssistantMessageIds(timelineEntries: ReadonlyArray<TimelineEntry>) {
   const lastAssistantMessageIdByResponseKey = new Map<string, string>();
+  const finalAnswerResponseKeys = new Set<string>();
   let nullTurnResponseIndex = 0;
 
   for (const timelineEntry of timelineEntries) {
@@ -104,15 +114,90 @@ function deriveTerminalAssistantMessageIds(timelineEntries: ReadonlyArray<Timeli
     const responseKey = message.turnId
       ? `turn:${message.turnId}`
       : `unkeyed:${nullTurnResponseIndex}`;
+    if (message.assistantPhase === "final_answer") {
+      lastAssistantMessageIdByResponseKey.set(responseKey, message.id);
+      finalAnswerResponseKeys.add(responseKey);
+      continue;
+    }
+    if (finalAnswerResponseKeys.has(responseKey)) {
+      continue;
+    }
     lastAssistantMessageIdByResponseKey.set(responseKey, message.id);
   }
 
   return new Set(lastAssistantMessageIdByResponseKey.values());
 }
 
+interface TurnFold {
+  readonly turnId: TurnId;
+  readonly finalEntryId: string;
+  readonly hiddenEntryIds: ReadonlySet<string>;
+  readonly completionSummary: string;
+}
+
+function deriveTurnFolds(
+  timelineEntries: ReadonlyArray<TimelineEntry>,
+  turns: ReadonlyArray<OrchestrationLatestTurn>,
+): ReadonlyMap<string, TurnFold> {
+  const assistantEntriesByTurnId = new Map<
+    TurnId,
+    Array<Extract<TimelineEntry, { kind: "message" }>>
+  >();
+  const workEntryIdsByTurnId = new Map<TurnId, string[]>();
+
+  for (const entry of timelineEntries) {
+    if (entry.kind === "message" && entry.message.role === "assistant" && entry.message.turnId) {
+      const assistantEntries = assistantEntriesByTurnId.get(entry.message.turnId) ?? [];
+      assistantEntries.push(entry);
+      assistantEntriesByTurnId.set(entry.message.turnId, assistantEntries);
+    }
+    if (entry.kind === "work" && entry.entry.turnId) {
+      const workEntryIds = workEntryIdsByTurnId.get(entry.entry.turnId) ?? [];
+      workEntryIds.push(entry.id);
+      workEntryIdsByTurnId.set(entry.entry.turnId, workEntryIds);
+    }
+  }
+
+  const foldsByFinalEntryId = new Map<string, TurnFold>();
+  for (const turn of turns) {
+    if (turn.state !== "completed" || !turn.completedAt) {
+      continue;
+    }
+    const assistantEntries = assistantEntriesByTurnId.get(turn.turnId) ?? [];
+    const finalEntry =
+      assistantEntries.findLast((entry) => entry.message.assistantPhase === "final_answer") ??
+      assistantEntries.find((entry) => entry.message.id === turn.assistantMessageId) ??
+      assistantEntries.at(-1);
+    if (!finalEntry) {
+      continue;
+    }
+
+    const hiddenEntryIds = new Set<string>(workEntryIdsByTurnId.get(turn.turnId) ?? []);
+    for (const entry of assistantEntries) {
+      if (entry.id !== finalEntry.id) {
+        hiddenEntryIds.add(entry.id);
+      }
+    }
+    if (hiddenEntryIds.size === 0) {
+      continue;
+    }
+
+    const elapsed = formatElapsed(turn.startedAt ?? turn.requestedAt, turn.completedAt);
+    foldsByFinalEntryId.set(finalEntry.id, {
+      turnId: turn.turnId,
+      finalEntryId: finalEntry.id,
+      hiddenEntryIds,
+      completionSummary: elapsed ? `Worked for ${elapsed}` : "Worked",
+    });
+  }
+  return foldsByFinalEntryId;
+}
+
 export function deriveMessagesTimelineRows(input: {
   timelineEntries: ReadonlyArray<TimelineEntry>;
-  completionDividerBeforeEntryId: string | null;
+  turns?: ReadonlyArray<OrchestrationLatestTurn>;
+  expandedTurnIds?: ReadonlySet<TurnId>;
+  completionDividerBeforeEntryId?: string | null;
   completionSummary?: string | null;
   isWorking: boolean;
   activeTurnInProgress?: boolean;
@@ -126,11 +211,36 @@ export function deriveMessagesTimelineRows(input: {
     input.timelineEntries.flatMap((entry) => (entry.kind === "message" ? [entry.message] : [])),
   );
   const terminalAssistantMessageIds = deriveTerminalAssistantMessageIds(input.timelineEntries);
+  const turnFoldsByFinalEntryId = deriveTurnFolds(input.timelineEntries, input.turns ?? []);
+  const collapsedEntryIds = new Set<string>();
+  for (const fold of turnFoldsByFinalEntryId.values()) {
+    if (!input.expandedTurnIds?.has(fold.turnId)) {
+      for (const entryId of fold.hiddenEntryIds) {
+        collapsedEntryIds.add(entryId);
+      }
+    }
+  }
 
   for (let index = 0; index < input.timelineEntries.length; index += 1) {
     const timelineEntry = input.timelineEntries[index];
     if (!timelineEntry) {
       continue;
+    }
+    if (collapsedEntryIds.has(timelineEntry.id)) {
+      continue;
+    }
+
+    const turnFold = turnFoldsByFinalEntryId.get(timelineEntry.id);
+    if (turnFold) {
+      nextRows.push({
+        kind: "turn-fold",
+        id: `turn-fold:${turnFold.turnId}`,
+        createdAt: timelineEntry.createdAt,
+        turnId: turnFold.turnId,
+        completionSummary: turnFold.completionSummary,
+        expanded: input.expandedTurnIds?.has(turnFold.turnId) ?? false,
+        hiddenCount: turnFold.hiddenEntryIds.size,
+      });
     }
 
     if (timelineEntry.kind === "work") {
@@ -138,7 +248,7 @@ export function deriveMessagesTimelineRows(input: {
       let cursor = index + 1;
       while (cursor < input.timelineEntries.length) {
         const nextEntry = input.timelineEntries[cursor];
-        if (!nextEntry || nextEntry.kind !== "work") break;
+        if (!nextEntry || nextEntry.kind !== "work" || collapsedEntryIds.has(nextEntry.id)) break;
         groupedEntries.push(nextEntry.entry);
         cursor += 1;
       }
@@ -234,6 +344,16 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
   switch (a.kind) {
     case "working":
       return a.createdAt === (b as typeof a).createdAt;
+
+    case "turn-fold": {
+      const bf = b as typeof a;
+      return (
+        a.createdAt === bf.createdAt &&
+        a.completionSummary === bf.completionSummary &&
+        a.expanded === bf.expanded &&
+        a.hiddenCount === bf.hiddenCount
+      );
+    }
 
     case "proposed-plan":
       return a.proposedPlan === (b as typeof a).proposedPlan;

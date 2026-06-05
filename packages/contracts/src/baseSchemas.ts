@@ -20,6 +20,9 @@ export const PortSchema = Schema.Int.check(Schema.isBetween({ minimum: 1, maximu
 export const IsoDateTime = Schema.String;
 export type IsoDateTime = typeof IsoDateTime.Type;
 
+export const AssistantMessagePhase = Schema.Literals(["commentary", "final_answer"]);
+export type AssistantMessagePhase = typeof AssistantMessagePhase.Type;
+
 /**
  * Construct a branded identifier. Enforces non-empty trimmed strings
  */

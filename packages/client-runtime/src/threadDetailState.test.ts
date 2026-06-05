@@ -47,6 +47,7 @@ const BASE_THREAD: OrchestrationThread = {
   branch: null,
   worktreePath: null,
   latestTurn: null,
+  turns: [],
   createdAt: "2026-04-01T00:00:00.000Z",
   updatedAt: "2026-04-01T00:00:00.000Z",
   archivedAt: null,
@@ -160,6 +161,16 @@ describe("createThreadDetailManager", () => {
           completedAt: "2026-04-01T01:00:00.000Z",
           assistantMessageId: MessageId.make("message-1"),
         },
+        turns: [
+          {
+            turnId: TurnId.make("turn-1"),
+            state: "completed",
+            requestedAt: "2026-04-01T01:00:00.000Z",
+            startedAt: "2026-04-01T01:00:00.000Z",
+            completedAt: "2026-04-01T01:00:00.000Z",
+            assistantMessageId: MessageId.make("message-1"),
+          },
+        ],
         messages: [
           {
             id: MessageId.make("message-1"),

@@ -52,6 +52,19 @@ const activityOrder = O.combineAll<OrchestrationThreadActivity>([
   O.mapInput(O.String, (a) => a.id),
 ]);
 
+function upsertTurn(
+  turns: OrchestrationThread["turns"] | undefined,
+  turn: OrchestrationLatestTurn | null,
+): NonNullable<OrchestrationThread["turns"]> {
+  const existingTurns = turns ?? [];
+  if (turn === null) {
+    return existingTurns;
+  }
+  return [...existingTurns.filter((entry) => entry.turnId !== turn.turnId), turn].toSorted(
+    (left, right) => left.requestedAt.localeCompare(right.requestedAt),
+  );
+}
+
 /**
  * Apply a single orchestration event to an `OrchestrationThread`, returning
  * the updated thread, a deletion signal, or an "unchanged" marker when the
@@ -87,6 +100,7 @@ export function applyThreadDetailEvent(
           branch: event.payload.branch,
           worktreePath: event.payload.worktreePath,
           latestTurn: null,
+          turns: [],
           createdAt: event.payload.createdAt,
           updatedAt: event.payload.updatedAt,
           archivedAt: null,
@@ -179,16 +193,18 @@ export function applyThreadDetailEvent(
       if (latestTurn === null || latestTurn.turnId !== event.payload.turnId) {
         return { kind: "unchanged" };
       }
+      const interruptedTurn = {
+        ...latestTurn,
+        state: "interrupted" as const,
+        startedAt: latestTurn.startedAt ?? event.payload.createdAt,
+        completedAt: latestTurn.completedAt ?? event.payload.createdAt,
+      };
       return {
         kind: "updated",
         thread: {
           ...thread,
-          latestTurn: {
-            ...latestTurn,
-            state: "interrupted",
-            startedAt: latestTurn.startedAt ?? event.payload.createdAt,
-            completedAt: latestTurn.completedAt ?? event.payload.createdAt,
-          },
+          latestTurn: interruptedTurn,
+          turns: upsertTurn(thread.turns, interruptedTurn),
           updatedAt: event.occurredAt,
         },
       };
@@ -200,6 +216,9 @@ export function applyThreadDetailEvent(
         id: event.payload.messageId,
         role: event.payload.role,
         text: event.payload.text,
+        ...(event.payload.assistantPhase !== undefined
+          ? { assistantPhase: event.payload.assistantPhase }
+          : {}),
         ...(event.payload.attachments !== undefined
           ? { attachments: event.payload.attachments }
           : {}),
@@ -222,6 +241,9 @@ export function applyThreadDetailEvent(
                       ? message.text
                       : entry.text,
                   streaming: message.streaming,
+                  ...(message.assistantPhase !== undefined
+                    ? { assistantPhase: message.assistantPhase }
+                    : {}),
                   ...(message.turnId !== undefined ? { turnId: message.turnId } : {}),
                   ...(message.streaming ? {} : { updatedAt: message.updatedAt }),
                   ...(message.attachments !== undefined
@@ -280,6 +302,7 @@ export function applyThreadDetailEvent(
           messages: cappedMessages,
           checkpoints,
           latestTurn,
+          turns: upsertTurn(thread.turns, latestTurn),
           updatedAt: event.occurredAt,
         },
       };
@@ -314,6 +337,7 @@ export function applyThreadDetailEvent(
           ...thread,
           session: event.payload.session,
           latestTurn,
+          turns: upsertTurn(thread.turns, latestTurn),
           updatedAt: event.occurredAt,
         },
       };
@@ -394,7 +418,13 @@ export function applyThreadDetailEvent(
 
       return {
         kind: "updated",
-        thread: { ...thread, checkpoints, latestTurn, updatedAt: event.occurredAt },
+        thread: {
+          ...thread,
+          checkpoints,
+          latestTurn,
+          turns: upsertTurn(thread.turns, latestTurn),
+          updatedAt: event.occurredAt,
+        },
       };
     }
 
@@ -435,6 +465,7 @@ export function applyThreadDetailEvent(
           messages,
           proposedPlans,
           activities,
+          turns: thread.turns?.filter((turn) => retainedTurnIds.has(turn.turnId)) ?? [],
           latestTurn:
             latestCheckpoint === null
               ? null

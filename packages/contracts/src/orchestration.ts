@@ -7,6 +7,7 @@ import * as Struct from "effect/Struct";
 import { ProviderOptionSelections } from "./model.ts";
 import { RepositoryIdentity } from "./environment.ts";
 import {
+  AssistantMessagePhase,
   ApprovalRequestId,
   CheckpointRef,
   CommandId,
@@ -217,6 +218,7 @@ export const OrchestrationMessage = Schema.Struct({
   id: MessageId,
   role: OrchestrationMessageRole,
   text: Schema.String,
+  assistantPhase: Schema.optional(AssistantMessagePhase),
   attachments: Schema.optional(Schema.Array(ChatAttachment)),
   turnId: Schema.NullOr(TurnId),
   streaming: Schema.Boolean,
@@ -342,6 +344,9 @@ export const OrchestrationThread = Schema.Struct({
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
   latestTurn: Schema.NullOr(OrchestrationLatestTurn),
+  turns: Schema.optional(Schema.Array(OrchestrationLatestTurn)).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
   archivedAt: Schema.NullOr(IsoDateTime).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
@@ -709,6 +714,7 @@ const ThreadMessageAssistantCompleteCommand = Schema.Struct({
   commandId: CommandId,
   threadId: ThreadId,
   messageId: MessageId,
+  assistantPhase: Schema.optional(AssistantMessagePhase),
   turnId: Schema.optional(TurnId),
   createdAt: IsoDateTime,
 });
@@ -883,6 +889,7 @@ export const ThreadMessageSentPayload = Schema.Struct({
   messageId: MessageId,
   role: OrchestrationMessageRole,
   text: Schema.String,
+  assistantPhase: Schema.optional(AssistantMessagePhase),
   attachments: Schema.optional(Schema.Array(ChatAttachment)),
   turnId: Schema.NullOr(TurnId),
   streaming: Schema.Boolean,
