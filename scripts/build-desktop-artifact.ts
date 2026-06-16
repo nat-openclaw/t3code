@@ -1077,6 +1077,13 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       options.arch,
       serverPackageJson.dependencies["@ff-labs/fff-node"],
     ),
+    // Windows artifacts also bundle the WSL (Linux x64) backend, which loads the
+    // fff native binary through ffi-rs. The platform fff binary above is the
+    // host's (win32), so promote the Linux x64 fff binaries too; without them
+    // file-finding in WSL fails to load @ff-labs/fff-bin-linux-x64-gnu.
+    ...(options.platform === "win"
+      ? resolveFffNativeDependencies("linux", "x64", serverPackageJson.dependencies["@ff-labs/fff-node"])
+      : {}),
   };
   const stagePnpmConfig = createStagePnpmConfig(workspacePatchedDependencies, stageDependencies);
   const stagePackageJson: StagePackageJson = {
