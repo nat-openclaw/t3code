@@ -690,6 +690,7 @@ interface MarkdownFileLinkProps {
 
 const MARKDOWN_LINK_HREF_PATTERN = /\[[^\]]*]\(([^)\s]+)(?:\s+["'][^"']*["'])?\)/g;
 const MARKDOWN_INLINE_CODE_PATTERN = /(?<!`)(`{1,2})(?!`)([\s\S]*?)(?<!`)\1(?!`)/g;
+const MARKDOWN_FENCED_CODE_BLOCK_PATTERN = /^(`{3,}|~{3,})[^\n]*\n[\s\S]*?^\1\s*$/gm;
 const MARKDOWN_FILE_LINK_CLASS_NAME =
   "chat-markdown-file-link cursor-pointer transition-colors hover:bg-accent/70";
 
@@ -764,8 +765,9 @@ function extractMarkdownLinkHrefs(text: string): string[] {
 }
 
 function extractMarkdownInlineCodeValues(text: string): string[] {
+  const stripped = text.replace(MARKDOWN_FENCED_CODE_BLOCK_PATTERN, "");
   const values: string[] = [];
-  for (const match of text.matchAll(MARKDOWN_INLINE_CODE_PATTERN)) {
+  for (const match of stripped.matchAll(MARKDOWN_INLINE_CODE_PATTERN)) {
     const value = match[2]?.trim();
     if (!value) continue;
     values.push(value);
