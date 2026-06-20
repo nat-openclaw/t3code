@@ -24,8 +24,9 @@ import {
   type ServerSettings as ContractServerSettings,
 } from "@t3tools/contracts";
 import * as PlatformError from "effect/PlatformError";
-import { HttpClient, HttpClientResponse } from "effect/unstable/http";
-import { ChildProcessSpawner } from "effect/unstable/process";
+import * as HttpClient from "effect/unstable/http/HttpClient";
+import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
+import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 import { deepMerge } from "@t3tools/shared/Struct";
 import { createModelCapabilities } from "@t3tools/shared/model";
 import { applyServerSettingsPatch } from "@t3tools/shared/serverSettings";

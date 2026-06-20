@@ -36,7 +36,8 @@ import {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { HttpClient, HttpClientResponse } from "effect/unstable/http";
+import * as HttpClient from "effect/unstable/http/HttpClient";
+import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 
 import * as Config from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
