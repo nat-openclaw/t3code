@@ -6,6 +6,48 @@ import type {
   AdvertisedEndpointSource,
   AdvertisedEndpointStatus,
 } from "@t3tools/contracts";
+import * as Schema from "effect/Schema";
+
+import { getUrlDiagnostics } from "./urlDiagnostics.ts";
+
+const AdvertisedEndpointInputDiagnosticFields = {
+  inputLength: Schema.Number,
+  inputProtocol: Schema.optional(Schema.String),
+  inputHostname: Schema.optional(Schema.String),
+};
+
+function advertisedEndpointInputDiagnostics(input: string) {
+  const diagnostics = getUrlDiagnostics(input);
+  return {
+    inputLength: diagnostics.inputLength,
+    ...(diagnostics.protocol === undefined ? {} : { inputProtocol: diagnostics.protocol }),
+    ...(diagnostics.hostname === undefined ? {} : { inputHostname: diagnostics.hostname }),
+  };
+}
+
+export class AdvertisedEndpointUrlParseError extends Schema.TaggedErrorClass<AdvertisedEndpointUrlParseError>()(
+  "AdvertisedEndpointUrlParseError",
+  {
+    ...AdvertisedEndpointInputDiagnosticFields,
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return "Invalid advertised endpoint URL.";
+  }
+}
+
+export class AdvertisedEndpointProtocolError extends Schema.TaggedErrorClass<AdvertisedEndpointProtocolError>()(
+  "AdvertisedEndpointProtocolError",
+  {
+    ...AdvertisedEndpointInputDiagnosticFields,
+    protocol: Schema.String,
+  },
+) {
+  override get message(): string {
+    return `Endpoint must use HTTP or HTTPS. Received ${this.protocol}`;
+  }
+}
 
 export interface CreateAdvertisedEndpointInput {
   readonly id: string;
@@ -22,7 +64,15 @@ export interface CreateAdvertisedEndpointInput {
 }
 
 export function normalizeHttpBaseUrl(rawValue: string): string {
-  const url = new URL(rawValue);
+  let url: URL;
+  try {
+    url = new URL(rawValue);
+  } catch (cause) {
+    throw new AdvertisedEndpointUrlParseError({
+      ...advertisedEndpointInputDiagnostics(rawValue),
+      cause,
+    });
+  }
   if (url.protocol === "ws:") {
     url.protocol = "http:";
   } else if (url.protocol === "wss:") {
@@ -30,7 +80,10 @@ export function normalizeHttpBaseUrl(rawValue: string): string {
   }
 
   if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error(`Endpoint must use HTTP or HTTPS. Received ${url.protocol}`);
+    throw new AdvertisedEndpointProtocolError({
+      ...advertisedEndpointInputDiagnostics(rawValue),
+      protocol: url.protocol,
+    });
   }
 
   url.pathname = "/";
