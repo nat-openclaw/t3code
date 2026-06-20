@@ -32,30 +32,15 @@ import {
 import * as OpenCodeRuntime from "../provider/opencodeRuntime.ts";
 
 const OPENCODE_TEXT_GENERATION_IDLE_TTL = "30 seconds";
+const isTextGenerationError = Schema.is(TextGenerationError);
 
-function getOpenCodePromptErrorMessage(error: unknown): string | null {
+function getOpenCodePromptErrorDetail(error: unknown): string | null {
   if (!error || typeof error !== "object") {
     return null;
   }
-
-  const message =
-    "data" in error &&
-    error.data &&
-    typeof error.data === "object" &&
-    "message" in error.data &&
-    typeof error.data.message === "string"
-      ? error.data.message.trim()
-      : "";
-  if (message.length > 0) {
-    return message;
-  }
-
-  if ("name" in error && typeof error.name === "string") {
-    const name = error.name.trim();
-    return name.length > 0 ? name : null;
-  }
-
-  return null;
+  return "name" in error && error.name === "StructuredOutputError"
+    ? "OpenCode failed to produce structured output."
+    : "OpenCode prompt returned an error.";
 }
 
 function getOpenCodeTextResponse(parts: ReadonlyArray<unknown> | undefined): string {
@@ -210,7 +195,7 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
                       (cause) =>
                         new TextGenerationError({
                           operation: input.operation,
-                          detail: OpenCodeRuntime.openCodeRuntimeErrorDetail(cause),
+                          detail: OpenCodeRuntime.OpenCodeRuntimeError.detailFromCause(cause),
                           cause,
                         }),
                     ),
@@ -300,7 +285,10 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
             permission: [{ permission: "*", pattern: "*", action: "deny" }],
           });
           if (!session.data) {
-            throw new Error("OpenCode session.create returned no session payload.");
+            throw new TextGenerationError({
+              operation: input.operation,
+              detail: "OpenCode session.create returned no session payload.",
+            });
           }
           const selectedAgent = getModelSelectionStringOptionValue(input.modelSelection, "agent");
           const selectedVariant = getModelSelectionStringOptionValue(
@@ -316,22 +304,27 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
             parts: [{ type: "text", text: input.prompt }, ...fileParts],
           });
           const info = result.data?.info;
-          const errorMessage = getOpenCodePromptErrorMessage(info?.error);
-          if (errorMessage) {
-            throw new Error(errorMessage);
+          const errorDetail = getOpenCodePromptErrorDetail(info?.error);
+          if (errorDetail) {
+            throw new TextGenerationError({ operation: input.operation, detail: errorDetail });
           }
           const rawText = getOpenCodeTextResponse(result.data?.parts);
           if (rawText.length === 0) {
-            throw new Error("OpenCode returned empty output.");
+            throw new TextGenerationError({
+              operation: input.operation,
+              detail: "OpenCode returned empty output.",
+            });
           }
           return rawText;
         },
         catch: (cause) =>
-          new TextGenerationError({
-            operation: input.operation,
-            detail: OpenCodeRuntime.openCodeRuntimeErrorDetail(cause),
-            cause,
-          }),
+          isTextGenerationError(cause)
+            ? cause
+            : new TextGenerationError({
+                operation: input.operation,
+                detail: OpenCodeRuntime.OpenCodeRuntimeError.detailFromCause(cause),
+                cause,
+              }),
       });
 
     const rawOutput =

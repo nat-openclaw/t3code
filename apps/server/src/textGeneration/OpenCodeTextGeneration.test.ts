@@ -300,7 +300,7 @@ it.layer(OpenCodeTextGenerationTestLayer)("OpenCodeTextGeneration", (it) => {
           })
           .pipe(Effect.flip);
 
-        expect(error.message).toContain("Model did not produce structured output");
+        expect(error.message).toContain("OpenCode failed to produce structured output.");
       }),
     ),
   );

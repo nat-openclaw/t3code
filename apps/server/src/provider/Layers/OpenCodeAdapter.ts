@@ -106,22 +106,20 @@ const toRequestError = (cause: OpenCodeRuntime.OpenCodeRuntimeError): ProviderAd
     provider: PROVIDER,
     method: cause.operation,
     detail: cause.detail,
-    cause: cause.cause,
+    cause,
   });
 
 /**
  * Map a `Cause.squash`-ed failure into a `ProviderAdapterProcessError`. The
  * typed cause is usually an `OpenCodeRuntimeError` (from {@link OpenCodeRuntime.runOpenCodeSdk}),
  * in which case we preserve its `detail`; otherwise we fall back to
- * {@link OpenCodeRuntime.openCodeRuntimeErrorDetail} for unknown causes (defects, etc.).
+ * {@link OpenCodeRuntime.OpenCodeRuntimeError.detailFromCause} for unknown causes (defects, etc.).
  */
 const toProcessError = (threadId: ThreadId, cause: unknown): ProviderAdapterProcessError =>
   new ProviderAdapterProcessError({
     provider: PROVIDER,
     threadId,
-    detail: OpenCodeRuntime.isOpenCodeRuntimeError(cause)
-      ? cause.detail
-      : OpenCodeRuntime.openCodeRuntimeErrorDetail(cause),
+    detail: OpenCodeRuntime.OpenCodeRuntimeError.detailFromCause(cause),
     cause,
   });
 
@@ -971,14 +969,12 @@ export function makeOpenCodeAdapter(
           }),
         ),
         (subscription) =>
-          Stream.fromAsyncIterable(
-            subscription.stream,
-            (cause) =>
-              new OpenCodeRuntime.OpenCodeRuntimeError({
-                operation: "event.subscribe",
-                detail: OpenCodeRuntime.openCodeRuntimeErrorDetail(cause),
-                cause,
-              }),
+          Stream.fromAsyncIterable(subscription.stream, (cause) =>
+            OpenCodeRuntime.OpenCodeRuntimeError.fromCause({
+              operation: "event.subscribe",
+              detail: "OpenCode event subscription failed.",
+              cause,
+            }),
           ).pipe(Stream.runForEach((event) => handleSubscribedEvent(context, event))),
       ).pipe(
         Effect.exit,
@@ -992,7 +988,7 @@ export function makeOpenCodeAdapter(
             if (Exit.isFailure(exit)) {
               yield* emitUnexpectedExit(
                 context,
-                OpenCodeRuntime.openCodeRuntimeErrorDetail(Cause.squash(exit.cause)),
+                OpenCodeRuntime.OpenCodeRuntimeError.detailFromCause(Cause.squash(exit.cause)),
               );
             }
           }),

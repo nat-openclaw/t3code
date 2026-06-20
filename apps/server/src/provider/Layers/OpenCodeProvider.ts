@@ -377,7 +377,7 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
             (cause) =>
               new OpenCodeProbeError({
                 cause,
-                detail: OpenCodeRuntime.openCodeRuntimeErrorDetail(cause),
+                detail: OpenCodeRuntime.OpenCodeRuntimeError.detailFromCause(cause),
               }),
           ),
         ),
@@ -440,7 +440,7 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
           (cause) =>
             new OpenCodeProbeError({
               cause,
-              detail: OpenCodeRuntime.openCodeRuntimeErrorDetail(cause),
+              detail: OpenCodeRuntime.OpenCodeRuntimeError.detailFromCause(cause),
             }),
         ),
       ),

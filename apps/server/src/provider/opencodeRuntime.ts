@@ -11,6 +11,9 @@ import {
   type QuestionAnswer,
   type QuestionRequest,
 } from "@opencode-ai/sdk/v2";
+import * as NetService from "@t3tools/shared/Net";
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
@@ -29,10 +32,8 @@ import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawne
 
 import { isWindowsCommandNotFound } from "../processRunner.ts";
 import { collectStreamAsString } from "./providerSnapshot.ts";
-import * as NetService from "@t3tools/shared/Net";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
-import { resolveSpawnCommand } from "@t3tools/shared/shell";
-const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.UnknownFromJsonString);
+
+const encoder = new TextEncoder();
 const OPENCODE_EMPTY_CONFIG_CONTENT = "{}";
 
 const OPENCODE_SERVER_READY_PREFIX = "opencode server listening";
@@ -56,36 +57,60 @@ export class OpenCodeRuntimeError extends Schema.TaggedErrorClass<OpenCodeRuntim
     detail: Schema.String,
     cause: Schema.optional(Schema.Defect()),
     exitCode: Schema.optionalKey(Schema.Number),
-    stdout: Schema.optionalKey(Schema.String),
-    stderr: Schema.optionalKey(Schema.String),
+    argumentCount: Schema.optionalKey(Schema.Number),
+    timeoutMs: Schema.optionalKey(Schema.Number),
+    responseStatus: Schema.optionalKey(Schema.Number),
+    stdoutBytes: Schema.optionalKey(Schema.Number),
+    stderrBytes: Schema.optionalKey(Schema.Number),
   },
 ) {
   override get message(): string {
     return `OpenCode runtime operation ${this.operation} failed.`;
   }
+
+  static fromCause(input: {
+    readonly operation: string;
+    readonly detail: string;
+    readonly cause: unknown;
+    readonly argumentCount?: number;
+  }): OpenCodeRuntimeError {
+    if (isOpenCodeRuntimeError(input.cause)) {
+      return input.cause;
+    }
+    const responseStatus = openCodeResponseStatus(input.cause);
+    return new OpenCodeRuntimeError({
+      operation: input.operation,
+      detail: input.detail,
+      cause: input.cause,
+      ...(input.argumentCount === undefined ? {} : { argumentCount: input.argumentCount }),
+      ...(responseStatus === undefined ? {} : { responseStatus }),
+    });
+  }
+
+  static detailFromCause(cause: unknown): string {
+    return isOpenCodeRuntimeError(cause) ? cause.detail : "OpenCode request failed.";
+  }
 }
 
 export const isOpenCodeRuntimeError = Schema.is(OpenCodeRuntimeError);
 
-function encodeJsonStringForDiagnostics(input: unknown): string | undefined {
-  const result = encodeUnknownJsonStringExit(input);
-  return Exit.isSuccess(result) ? result.value : undefined;
+function openCodeResponseStatus(cause: unknown): number | undefined {
+  if (isOpenCodeRuntimeError(cause)) {
+    return cause.responseStatus;
+  }
+  if (typeof cause !== "object" || cause === null) {
+    return undefined;
+  }
+  const response = (cause as Readonly<Record<string, unknown>>).response;
+  if (typeof response !== "object" || response === null) {
+    return undefined;
+  }
+  const status = (response as Readonly<Record<string, unknown>>).status;
+  return typeof status === "number" && Number.isInteger(status) ? status : undefined;
 }
 
-export function openCodeRuntimeErrorDetail(cause: unknown): string {
-  if (isOpenCodeRuntimeError(cause)) return cause.detail;
-  if (cause instanceof Error && cause.message.trim().length > 0) return cause.message.trim();
-  if (cause && typeof cause === "object") {
-    // SDK v2 throws { response, request, error? } shapes — extract what's useful
-    const anyCause = cause as Record<string, unknown>;
-    const status = (anyCause.response as { status?: number } | undefined)?.status;
-    const body = anyCause.error ?? anyCause.data ?? anyCause.body;
-    const encodedBody = encodeJsonStringForDiagnostics(body ?? cause);
-    if (encodedBody) {
-      return `status=${status ?? "?"} body=${encodedBody}`;
-    }
-  }
-  return String(cause);
+function utf8ByteLength(value: string): number {
+  return encoder.encode(value).byteLength;
 }
 
 export const runOpenCodeSdk = <A>(
@@ -95,7 +120,11 @@ export const runOpenCodeSdk = <A>(
   Effect.tryPromise({
     try: fn,
     catch: (cause) =>
-      new OpenCodeRuntimeError({ operation, detail: openCodeRuntimeErrorDetail(cause), cause }),
+      OpenCodeRuntimeError.fromCause({
+        operation,
+        detail: "OpenCode SDK request failed.",
+        cause,
+      }),
   }).pipe(Effect.withSpan(`opencode.${operation}`));
 
 export interface OpenCodeCommandResult {
@@ -275,16 +304,6 @@ export function toOpenCodeQuestionAnswers(
   });
 }
 
-function ensureRuntimeError(
-  operation: OpenCodeRuntimeError["operation"],
-  detail: string,
-  cause: unknown,
-): OpenCodeRuntimeError {
-  return isOpenCodeRuntimeError(cause)
-    ? cause
-    : new OpenCodeRuntimeError({ operation, detail, cause });
-}
-
 export const make = Effect.gen(function* () {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const netService = yield* NetService.NetService;
@@ -309,7 +328,8 @@ export const make = Effect.gen(function* () {
       if (yield* isWindowsCommandNotFound(exitCode, stderr)) {
         return yield* new OpenCodeRuntimeError({
           operation: "runOpenCodeCommand",
-          detail: `spawn ${input.binaryPath} ENOENT`,
+          detail: "OpenCode executable was not found.",
+          argumentCount: input.args.length,
         });
       }
       return {
@@ -320,11 +340,12 @@ export const make = Effect.gen(function* () {
     }).pipe(
       Effect.scoped,
       Effect.mapError((cause) =>
-        ensureRuntimeError(
-          "runOpenCodeCommand",
-          `Failed to execute '${input.binaryPath} ${input.args.join(" ")}': ${openCodeRuntimeErrorDetail(cause)}`,
+        OpenCodeRuntimeError.fromCause({
+          operation: "runOpenCodeCommand",
+          detail: "Failed to execute OpenCode command.",
           cause,
-        ),
+          argumentCount: input.args.length,
+        }),
       ),
     );
 
@@ -341,13 +362,12 @@ export const make = Effect.gen(function* () {
       const port =
         input.port ??
         (yield* netService.findAvailablePort(0).pipe(
-          Effect.mapError(
-            (cause) =>
-              new OpenCodeRuntimeError({
-                operation: "startOpenCodeServerProcess",
-                detail: `Failed to find available port: ${openCodeRuntimeErrorDetail(cause)}`,
-                cause,
-              }),
+          Effect.mapError((cause) =>
+            OpenCodeRuntimeError.fromCause({
+              operation: "startOpenCodeServerProcess",
+              detail: "Failed to find an available OpenCode server port.",
+              cause,
+            }),
           ),
         ));
       const timeoutMs = input.timeoutMs ?? DEFAULT_OPENCODE_SERVER_TIMEOUT_MS;
@@ -368,13 +388,13 @@ export const make = Effect.gen(function* () {
         )
         .pipe(
           Effect.provideService(Scope.Scope, runtimeScope),
-          Effect.mapError(
-            (cause) =>
-              new OpenCodeRuntimeError({
-                operation: "startOpenCodeServerProcess",
-                detail: `Failed to spawn OpenCode server process: ${openCodeRuntimeErrorDetail(cause)}`,
-                cause,
-              }),
+          Effect.mapError((cause) =>
+            OpenCodeRuntimeError.fromCause({
+              operation: "startOpenCodeServerProcess",
+              detail: "Failed to spawn OpenCode server process.",
+              cause,
+              argumentCount: args.length,
+            }),
           ),
         );
 
@@ -434,16 +454,11 @@ export const make = Effect.gen(function* () {
               readyDeferred,
               new OpenCodeRuntimeError({
                 operation: "startOpenCodeServerProcess",
-                detail: [
-                  `OpenCode server exited before startup completed (code: ${String(exitCode)}).`,
-                  stdout.trim() ? `stdout:\n${stdout.trim()}` : null,
-                  stderr.trim() ? `stderr:\n${stderr.trim()}` : null,
-                ]
-                  .filter(Boolean)
-                  .join("\n\n"),
+                detail: "OpenCode server exited before startup completed.",
                 exitCode,
-                stdout,
-                stderr,
+                argumentCount: args.length,
+                stdoutBytes: utf8ByteLength(stdout),
+                stderrBytes: utf8ByteLength(stderr),
               }),
             ).pipe(Effect.ignore);
           }),
@@ -465,11 +480,11 @@ export const make = Effect.gen(function* () {
       if (Exit.isFailure(readyExit)) {
         yield* Fiber.interrupt(exitFiber).pipe(Effect.ignore);
         const squashed = Cause.squash(readyExit.cause);
-        return yield* ensureRuntimeError(
-          "startOpenCodeServerProcess",
-          `Failed while waiting for OpenCode server startup: ${openCodeRuntimeErrorDetail(squashed)}`,
-          squashed,
-        );
+        return yield* OpenCodeRuntimeError.fromCause({
+          operation: "startOpenCodeServerProcess",
+          detail: "Failed while waiting for OpenCode server startup.",
+          cause: squashed,
+        });
       }
 
       const readyOption = readyExit.value;
@@ -477,7 +492,8 @@ export const make = Effect.gen(function* () {
         yield* Fiber.interrupt(exitFiber).pipe(Effect.ignore);
         return yield* new OpenCodeRuntimeError({
           operation: "startOpenCodeServerProcess",
-          detail: `Timed out waiting for OpenCode server start after ${timeoutMs}ms.`,
+          detail: "Timed out waiting for OpenCode server startup.",
+          timeoutMs,
         });
       }
 

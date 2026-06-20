@@ -369,7 +369,8 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
         runtimeMode: "full-access",
       });
 
-      runtimeMock.state.promptAsyncError = new Error("prompt failed");
+      const promptFailure = new Error("prompt failed");
+      runtimeMock.state.promptAsyncError = promptFailure;
       const error = yield* adapter
         .sendTurn({
           threadId: asThreadId("thread-send-turn-failure"),
@@ -386,15 +387,17 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
       if (error._tag !== "ProviderAdapterRequestError") {
         throw new Error("Unexpected error type");
       }
-      NodeAssert.equal(error.detail, "prompt failed");
+      NodeAssert.equal(error.detail, "OpenCode SDK request failed.");
       NodeAssert.equal(
         error.message,
-        "Provider adapter request failed (opencode) for session.promptAsync: prompt failed",
+        "Provider adapter request failed (opencode) for session.promptAsync: OpenCode SDK request failed.",
       );
+      NodeAssert.ok(OpenCodeRuntime.isOpenCodeRuntimeError(error.cause));
+      NodeAssert.strictEqual(error.cause.cause, promptFailure);
       NodeAssert.equal(sessions.length, 1);
       NodeAssert.equal(sessions[0]?.status, "ready");
       NodeAssert.equal(sessions[0]?.activeTurnId, undefined);
-      NodeAssert.equal(sessions[0]?.lastError, "prompt failed");
+      NodeAssert.equal(sessions[0]?.lastError, "OpenCode SDK request failed.");
     }),
   );
 
