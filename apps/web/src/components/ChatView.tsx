@@ -4815,117 +4815,131 @@ function ChatViewContent(props: ChatViewProps) {
             <div
               ref={setComposerOverlayElement}
               data-chat-composer-overlay="true"
-              className={cn(
-                "pointer-events-none absolute inset-x-0 bottom-0 z-20 pl-[calc(env(safe-area-inset-left)+0.75rem)] pr-[calc(env(safe-area-inset-right)+0.75rem)] pt-1.5 sm:pl-[calc(env(safe-area-inset-left)+1.25rem)] sm:pr-[calc(env(safe-area-inset-right)+1.25rem)] sm:pt-2",
-                isGitRepo
-                  ? "pb-[calc(env(safe-area-inset-bottom)+0.25rem)]"
-                  : "pb-[calc(env(safe-area-inset-bottom)+0.75rem)] sm:pb-[calc(env(safe-area-inset-bottom)+1rem)]",
-              )}
+              className="pointer-events-none absolute inset-x-0 bottom-0 z-20 pt-1.5 sm:pt-2"
             >
-              <div className="pointer-events-auto relative isolate">
-                <ComposerBannerStack className="relative z-0" items={composerBannerItems} />
-                <div className="relative z-10">
-                  <ChatComposer
-                    composerRef={composerRef}
-                    composerDraftTarget={composerDraftTarget}
-                    environmentId={environmentId}
-                    routeKind={routeKind}
-                    routeThreadRef={routeThreadRef}
-                    draftId={draftId}
-                    activeThreadId={activeThreadId}
-                    activeThreadEnvironmentId={activeThread?.environmentId}
-                    activeThread={activeThread}
-                    isServerThread={isServerThread}
-                    isLocalDraftThread={isLocalDraftThread}
-                    phase={phase}
-                    isConnecting={isConnecting}
-                    isSendBusy={isSendBusy}
-                    isPreparingWorktree={isPreparingWorktree}
-                    environmentUnavailable={activeEnvironmentUnavailableState}
-                    activePendingApproval={activePendingApproval}
-                    pendingApprovals={pendingApprovals}
-                    pendingUserInputs={pendingUserInputs}
-                    activePendingProgress={activePendingProgress}
-                    activePendingResolvedAnswers={activePendingResolvedAnswers}
-                    activePendingIsResponding={activePendingIsResponding}
-                    activePendingDraftAnswers={activePendingDraftAnswers}
-                    activePendingQuestionIndex={activePendingQuestionIndex}
-                    respondingRequestIds={respondingRequestIds}
-                    showPlanFollowUpPrompt={showPlanFollowUpPrompt}
-                    activeProposedPlan={activeProposedPlan}
-                    activePlan={activePlan as { turnId?: TurnId } | null}
-                    sidebarProposedPlan={sidebarProposedPlan as { turnId?: TurnId } | null}
-                    planSidebarLabel={planSidebarLabel}
-                    planSidebarOpen={planSidebarOpen}
-                    runtimeMode={runtimeMode}
-                    interactionMode={interactionMode}
-                    lockedProvider={lockedProvider}
-                    providerStatuses={providerStatuses as ServerProvider[]}
-                    activeProjectDefaultModelSelection={activeProject?.defaultModelSelection}
-                    activeThreadModelSelection={activeThread?.modelSelection}
-                    activeThreadActivities={activeThread?.activities}
-                    resolvedTheme={resolvedTheme}
-                    settings={settings}
-                    keybindings={keybindings}
-                    terminalOpen={Boolean(terminalUiState.terminalOpen)}
-                    gitCwd={gitCwd}
-                    promptRef={promptRef}
-                    composerImagesRef={composerImagesRef}
-                    composerTerminalContextsRef={composerTerminalContextsRef}
-                    composerElementContextsRef={composerElementContextsRef}
-                    onSend={onSend}
-                    onInterrupt={onInterrupt}
-                    onImplementPlanInNewThread={onImplementPlanInNewThread}
-                    onRespondToApproval={onRespondToApproval}
-                    onSelectActivePendingUserInputOption={onSelectActivePendingUserInputOption}
-                    onAdvanceActivePendingUserInput={onAdvanceActivePendingUserInput}
-                    onPreviousActivePendingUserInputQuestion={
-                      onPreviousActivePendingUserInputQuestion
-                    }
-                    onChangeActivePendingUserInputCustomAnswer={
-                      onChangeActivePendingUserInputCustomAnswer
-                    }
-                    onProviderModelSelect={onProviderModelSelect}
-                    getModelDisabledReason={getModelDisabledReason}
-                    toggleInteractionMode={toggleInteractionMode}
-                    handleRuntimeModeChange={handleRuntimeModeChange}
-                    handleInteractionModeChange={handleInteractionModeChange}
-                    togglePlanSidebar={togglePlanSidebar}
-                    focusComposer={focusComposer}
-                    scheduleComposerFocus={scheduleComposerFocus}
-                    setThreadError={setThreadError}
-                    onExpandImage={onExpandTimelineImage}
-                  />
+              <div
+                aria-hidden="true"
+                className="chat-composer-horizontal-inset pointer-events-none absolute inset-x-0 top-1.5 bottom-0 z-0 sm:top-2"
+              >
+                <div className="relative mx-auto h-full w-full max-w-208 overflow-clip rounded-t-[20px]">
+                  <div className="chat-composer-shared-blur absolute -inset-8" />
                 </div>
               </div>
-              {isGitRepo && (
-                <div className="pointer-events-auto">
-                  <BranchToolbar
-                    environmentId={activeThread.environmentId}
-                    threadId={activeThread.id}
-                    {...(routeKind === "draft" && draftId ? { draftId } : {})}
-                    onEnvModeChange={onEnvModeChange}
-                    startFromOrigin={startFromOrigin}
-                    onStartFromOriginChange={onStartFromOriginChange}
-                    {...(canOverrideServerThreadEnvMode
-                      ? { effectiveEnvModeOverride: envMode }
-                      : {})}
-                    {...(canOverrideServerThreadEnvMode
-                      ? {
-                          activeThreadBranchOverride: activeThreadBranch,
-                          onActiveThreadBranchOverrideChange: setPendingServerThreadBranch,
-                        }
-                      : {})}
-                    envLocked={envLocked}
-                    onComposerFocusRequest={scheduleComposerFocus}
-                    {...(canCheckoutPullRequestIntoThread
-                      ? { onCheckoutPullRequestRequest: openPullRequestDialog }
-                      : {})}
-                    {...(hasMultipleEnvironments ? { onEnvironmentChange } : {})}
-                    availableEnvironments={logicalProjectEnvironments}
-                  />
+              <div className="chat-composer-horizontal-inset">
+                <div className="pointer-events-auto relative z-10 isolate">
+                  <ComposerBannerStack className="relative z-0" items={composerBannerItems} />
+                  <div className="relative z-10">
+                    <ChatComposer
+                      composerRef={composerRef}
+                      composerDraftTarget={composerDraftTarget}
+                      environmentId={environmentId}
+                      routeKind={routeKind}
+                      routeThreadRef={routeThreadRef}
+                      draftId={draftId}
+                      activeThreadId={activeThreadId}
+                      activeThreadEnvironmentId={activeThread?.environmentId}
+                      activeThread={activeThread}
+                      isServerThread={isServerThread}
+                      isLocalDraftThread={isLocalDraftThread}
+                      phase={phase}
+                      isConnecting={isConnecting}
+                      isSendBusy={isSendBusy}
+                      isPreparingWorktree={isPreparingWorktree}
+                      environmentUnavailable={activeEnvironmentUnavailableState}
+                      activePendingApproval={activePendingApproval}
+                      pendingApprovals={pendingApprovals}
+                      pendingUserInputs={pendingUserInputs}
+                      activePendingProgress={activePendingProgress}
+                      activePendingResolvedAnswers={activePendingResolvedAnswers}
+                      activePendingIsResponding={activePendingIsResponding}
+                      activePendingDraftAnswers={activePendingDraftAnswers}
+                      activePendingQuestionIndex={activePendingQuestionIndex}
+                      respondingRequestIds={respondingRequestIds}
+                      showPlanFollowUpPrompt={showPlanFollowUpPrompt}
+                      activeProposedPlan={activeProposedPlan}
+                      activePlan={activePlan as { turnId?: TurnId } | null}
+                      sidebarProposedPlan={sidebarProposedPlan as { turnId?: TurnId } | null}
+                      planSidebarLabel={planSidebarLabel}
+                      planSidebarOpen={planSidebarOpen}
+                      runtimeMode={runtimeMode}
+                      interactionMode={interactionMode}
+                      lockedProvider={lockedProvider}
+                      providerStatuses={providerStatuses as ServerProvider[]}
+                      activeProjectDefaultModelSelection={activeProject?.defaultModelSelection}
+                      activeThreadModelSelection={activeThread?.modelSelection}
+                      activeThreadActivities={activeThread?.activities}
+                      resolvedTheme={resolvedTheme}
+                      settings={settings}
+                      keybindings={keybindings}
+                      terminalOpen={Boolean(terminalUiState.terminalOpen)}
+                      gitCwd={gitCwd}
+                      promptRef={promptRef}
+                      composerImagesRef={composerImagesRef}
+                      composerTerminalContextsRef={composerTerminalContextsRef}
+                      composerElementContextsRef={composerElementContextsRef}
+                      onSend={onSend}
+                      onInterrupt={onInterrupt}
+                      onImplementPlanInNewThread={onImplementPlanInNewThread}
+                      onRespondToApproval={onRespondToApproval}
+                      onSelectActivePendingUserInputOption={onSelectActivePendingUserInputOption}
+                      onAdvanceActivePendingUserInput={onAdvanceActivePendingUserInput}
+                      onPreviousActivePendingUserInputQuestion={
+                        onPreviousActivePendingUserInputQuestion
+                      }
+                      onChangeActivePendingUserInputCustomAnswer={
+                        onChangeActivePendingUserInputCustomAnswer
+                      }
+                      onProviderModelSelect={onProviderModelSelect}
+                      getModelDisabledReason={getModelDisabledReason}
+                      toggleInteractionMode={toggleInteractionMode}
+                      handleRuntimeModeChange={handleRuntimeModeChange}
+                      handleInteractionModeChange={handleInteractionModeChange}
+                      togglePlanSidebar={togglePlanSidebar}
+                      focusComposer={focusComposer}
+                      scheduleComposerFocus={scheduleComposerFocus}
+                      setThreadError={setThreadError}
+                      onExpandImage={onExpandTimelineImage}
+                    />
+                  </div>
                 </div>
-              )}
+              </div>
+              <div
+                className={cn(
+                  "chat-composer-horizontal-inset chat-composer-lower-chrome relative z-10",
+                  isGitRepo
+                    ? "pb-[calc(env(safe-area-inset-bottom)+0.25rem)]"
+                    : "pb-[calc(env(safe-area-inset-bottom)+0.75rem)] sm:pb-[calc(env(safe-area-inset-bottom)+1rem)]",
+                )}
+              >
+                {isGitRepo && (
+                  <div className="pointer-events-auto">
+                    <BranchToolbar
+                      environmentId={activeThread.environmentId}
+                      threadId={activeThread.id}
+                      {...(routeKind === "draft" && draftId ? { draftId } : {})}
+                      onEnvModeChange={onEnvModeChange}
+                      startFromOrigin={startFromOrigin}
+                      onStartFromOriginChange={onStartFromOriginChange}
+                      {...(canOverrideServerThreadEnvMode
+                        ? { effectiveEnvModeOverride: envMode }
+                        : {})}
+                      {...(canOverrideServerThreadEnvMode
+                        ? {
+                            activeThreadBranchOverride: activeThreadBranch,
+                            onActiveThreadBranchOverrideChange: setPendingServerThreadBranch,
+                          }
+                        : {})}
+                      envLocked={envLocked}
+                      onComposerFocusRequest={scheduleComposerFocus}
+                      {...(canCheckoutPullRequestIntoThread
+                        ? { onCheckoutPullRequestRequest: openPullRequestDialog }
+                        : {})}
+                      {...(hasMultipleEnvironments ? { onEnvironmentChange } : {})}
+                      availableEnvironments={logicalProjectEnvironments}
+                    />
+                  </div>
+                )}
+              </div>
             </div>
 
             {pullRequestDialogState ? (

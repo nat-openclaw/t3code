@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import {
-  CHAT_LIST_ANCHOR_MAX_SIZE,
-  CHAT_LIST_ANCHOR_OFFSET,
-  resolveChatListAnchoredEndSpace,
-} from "./chatList.js";
+import { CHAT_LIST_ANCHOR_OFFSET, resolveChatListAnchoredEndSpace } from "./chatList.js";
 
 interface Row {
   readonly id: string;
@@ -20,11 +16,21 @@ const rows: ReadonlyArray<Row> = [
 const getAnchorId = (row: Row) => (row.anchorable ? row.id : null);
 
 describe("resolveChatListAnchoredEndSpace", () => {
-  it("returns the shared AI-chat anchor policy for the matching row", () => {
+  it("anchors the matching row using its measured height", () => {
     expect(resolveChatListAnchoredEndSpace(rows, "latest", getAnchorId)).toEqual({
       anchorIndex: 2,
-      anchorMaxSize: CHAT_LIST_ANCHOR_MAX_SIZE,
       anchorOffset: CHAT_LIST_ANCHOR_OFFSET,
+    });
+  });
+
+  it("allows a surface to keep the anchor below its own header", () => {
+    expect(
+      resolveChatListAnchoredEndSpace(rows, "latest", getAnchorId, {
+        anchorOffset: 132,
+      }),
+    ).toEqual({
+      anchorIndex: 2,
+      anchorOffset: 132,
     });
   });
 

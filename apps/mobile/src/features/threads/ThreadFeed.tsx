@@ -2,7 +2,7 @@ import * as Haptics from "expo-haptics";
 import { KeyboardAwareLegendList } from "@legendapp/list/keyboard";
 import { type LegendListRef } from "@legendapp/list/react-native";
 import type { EnvironmentId, MessageId, ThreadId, TurnId } from "@t3tools/contracts";
-import { resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
+import { CHAT_LIST_ANCHOR_OFFSET, resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
 import { SymbolView } from "expo-symbols";
 import { useRouter } from "expo-router";
 import {
@@ -1196,10 +1196,13 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   );
   const anchoredEndSpace = useMemo(
     () =>
-      resolveChatListAnchoredEndSpace(presentedFeed, props.anchorMessageId, (entry) =>
-        entry.type === "message" ? entry.id : null,
+      resolveChatListAnchoredEndSpace(
+        presentedFeed,
+        props.anchorMessageId,
+        (entry) => (entry.type === "message" ? entry.id : null),
+        { anchorOffset: topContentInset + CHAT_LIST_ANCHOR_OFFSET },
       ),
-    [presentedFeed, props.anchorMessageId],
+    [presentedFeed, props.anchorMessageId, topContentInset],
   );
   const terminalAssistantMessageIds = useMemo(() => {
     const terminalIdsByTurn = new Map<TurnId, string>();

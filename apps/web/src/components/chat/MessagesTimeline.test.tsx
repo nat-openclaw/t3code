@@ -13,13 +13,19 @@ vi.mock("@legendapp/list/react", async () => {
     renderItem: (args: { item: { id: string } }) => ReactNode;
     ListHeaderComponent?: ReactNode;
     ListFooterComponent?: ReactNode;
-    anchoredEndSpace?: { anchorIndex: number };
+    anchoredEndSpace?: {
+      anchorIndex: number;
+      anchorMaxSize?: number;
+      anchorOffset?: number;
+    };
     contentInsetEndAdjustment?: number;
     ref?: Ref<LegendListRef>;
   }) => (
     <div
       data-testid={legendListTestId}
       data-anchor-index={props.anchoredEndSpace?.anchorIndex}
+      data-anchor-max-size={props.anchoredEndSpace?.anchorMaxSize}
+      data-anchor-offset={props.anchoredEndSpace?.anchorOffset}
       data-content-inset-end={props.contentInsetEndAdjustment}
     >
       {props.ListHeaderComponent}
@@ -145,7 +151,7 @@ function buildUserTimelineEntry(text: string) {
 }
 
 describe("MessagesTimeline", () => {
-  it("anchors a sent message above the measured floating composer", async () => {
+  it("anchors a sent attachment message using its measured height", async () => {
     const { MessagesTimeline } = await import("./MessagesTimeline");
     const firstEntry = buildUserTimelineEntry("First prompt.");
     const secondEntry = {
@@ -154,6 +160,16 @@ describe("MessagesTimeline", () => {
       message: {
         ...buildUserTimelineEntry("Newest prompt.").message,
         id: MessageId.make("message-2"),
+        attachments: [
+          {
+            type: "image" as const,
+            id: "attachment-1",
+            name: "screenshot.png",
+            mimeType: "image/png",
+            sizeBytes: 1,
+            previewUrl: "data:image/png;base64,iVBORw0KGgo=",
+          },
+        ],
       },
     };
     const markup = renderToStaticMarkup(
@@ -166,6 +182,8 @@ describe("MessagesTimeline", () => {
     );
 
     expect(markup).toContain('data-anchor-index="1"');
+    expect(markup).toContain('data-anchor-offset="16"');
+    expect(markup).not.toContain("data-anchor-max-size=");
     expect(markup).toContain('data-content-inset-end="144"');
   });
 
