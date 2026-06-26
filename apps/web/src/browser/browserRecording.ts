@@ -196,6 +196,9 @@ export async function startBrowserRecording(tabId: string): Promise<string> {
       cause,
     });
   }
+  // Expose the recording tab to React before starting screencast so the
+  // webview removes `visibility: hidden` and Chromium can paint frames.
+  appAtomRegistry.set(activeBrowserRecordingTabIdAtom, tabId);
   try {
     await bridge.recording.startScreencast(tabId);
   } catch (cause) {
@@ -220,7 +223,6 @@ export async function startBrowserRecording(tabId: string): Promise<string> {
             ),
     });
   }
-  appAtomRegistry.set(activeBrowserRecordingTabIdAtom, tabId);
   return startedAt;
 }
 
