@@ -194,12 +194,13 @@ describe("browser recording surface preparation", () => {
     );
     await vi.waitFor(() => expect(frameCallbacks).toHaveLength(1));
 
-    await stopBrowserRecording("recording-tab");
+    const stopPromise = stopBrowserRecording("recording-tab");
     frameCallbacks.shift()?.(1);
     expect(frameCallbacks).toHaveLength(1);
     frameCallbacks.shift()?.(2);
 
     await rejectedStart;
+    await stopPromise;
     expect(startScreencast).not.toHaveBeenCalled();
     expect(events).toEqual(["publish:recording-tab", "clear", "clear"]);
   });
@@ -219,12 +220,42 @@ describe("browser recording surface preparation", () => {
     );
     await vi.waitFor(() => expect(startScreencast).toHaveBeenCalledOnce());
 
-    await stopBrowserRecording("recording-tab");
-    expect(stopScreencast).toHaveBeenCalledOnce();
+    const stopPromise = stopBrowserRecording("recording-tab");
+    await vi.waitFor(() => expect(stopScreencast).toHaveBeenCalledOnce());
     finishStartingScreencast?.();
 
     await rejectedStart;
+    await stopPromise;
     expect(stopScreencast).toHaveBeenCalledTimes(2);
     expect(events.at(-1)).toBe("clear");
+  });
+
+  it("does not release the recording slot until a cancelled start settles", async () => {
+    let finishStartingScreencast: (() => void) | undefined;
+    startScreencast.mockImplementationOnce(async () => {
+      events.push("start-screencast");
+      await new Promise<void>((resolve) => {
+        finishStartingScreencast = resolve;
+      });
+    });
+
+    const firstStart = startBrowserRecording("recording-tab");
+    const rejectedFirstStart = expect(firstStart).rejects.toBeInstanceOf(
+      BrowserRecordingOperationError,
+    );
+    await vi.waitFor(() => expect(startScreencast).toHaveBeenCalledOnce());
+
+    const stopPromise = stopBrowserRecording("recording-tab");
+    const restartAfterStop = stopPromise.then(() => startBrowserRecording("recording-tab"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const startCallsBeforeFirstSettled = startScreencast.mock.calls.length;
+
+    finishStartingScreencast?.();
+    await rejectedFirstStart;
+    await stopPromise;
+    await restartAfterStop;
+    await stopBrowserRecording("recording-tab");
+
+    expect(startCallsBeforeFirstSettled).toBe(1);
   });
 });

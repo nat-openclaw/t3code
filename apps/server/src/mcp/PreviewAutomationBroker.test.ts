@@ -814,7 +814,9 @@ it.effect("fails over a pinned provider session only after its host disconnects"
   Effect.scoped(
     Effect.gen(function* () {
       const broker = yield* makeBroker;
+      const firstTabId = PreviewTabId.make("tab-on-first-host");
       let firstConnectionId = "";
+      let secondRoutedTabId: PreviewTabId | undefined;
       const firstRequests = requestsFrom(
         yield* broker.connect(makeHost({ clientId: "client-first" })),
         (connectionId) => {
@@ -830,18 +832,19 @@ it.effect("fails over a pinned provider session only after its host disconnects"
           connectionId: request.connectionId,
           requestId: request.requestId,
           ok: true,
-          result: "first",
+          result: request.operation === "open" ? { host: "first", tabId: firstTabId } : "first",
         }),
       ).pipe(Effect.forkScoped);
-      yield* Stream.runForEach(secondRequests, (request) =>
-        broker.respond({
+      yield* Stream.runForEach(secondRequests, (request) => {
+        secondRoutedTabId = request.tabId;
+        return broker.respond({
           clientId: "client-second",
           connectionId: request.connectionId,
           requestId: request.requestId,
           ok: true,
           result: "second",
-        }),
-      ).pipe(Effect.forkScoped);
+        });
+      }).pipe(Effect.forkScoped);
       yield* Effect.yieldNow;
 
       yield* broker.focusHost({
@@ -850,7 +853,10 @@ it.effect("fails over a pinned provider session only after its host disconnects"
         connectionId: firstConnectionId,
         focused: true,
       });
-      expect(yield* broker.invoke<string>({ scope, operation: "status", input: {} })).toBe("first");
+      expect(yield* broker.invoke({ scope, operation: "open", input: {} })).toEqual({
+        host: "first",
+        tabId: firstTabId,
+      });
 
       yield* Fiber.interrupt(firstConsumer);
       yield* Effect.yieldNow;
@@ -858,6 +864,7 @@ it.effect("fails over a pinned provider session only after its host disconnects"
       expect(yield* broker.invoke<string>({ scope, operation: "status", input: {} })).toBe(
         "second",
       );
+      expect(secondRoutedTabId).toBeUndefined();
     }),
   ),
 );
