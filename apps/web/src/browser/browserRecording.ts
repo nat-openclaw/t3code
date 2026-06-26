@@ -181,7 +181,7 @@ export async function startBrowserRecording(tabId: string): Promise<string> {
   const bridge = previewBridge;
   if (!bridge) throw new BrowserRecordingUnavailableError({ tabId });
   if (active) {
-    if (active.tabId === tabId) return active.startedAt;
+    if (active.tabId === tabId && !active.stopping) return active.startedAt;
     throw new BrowserRecordingConflictError({
       requestedTabId: tabId,
       activeTabId: active.tabId,
