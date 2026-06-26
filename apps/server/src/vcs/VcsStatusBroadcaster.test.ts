@@ -130,6 +130,40 @@ describe("VcsStatusBroadcaster", () => {
     }).pipe(Effect.provide(makeTestLayer(state)));
   });
 
+  it.effect("evicts the least recently used status after reaching cache capacity", () => {
+    const state = {
+      currentLocalStatus: baseLocalStatus,
+      currentRemoteStatus: baseRemoteStatus,
+      localStatusCalls: 0,
+      remoteStatusCalls: 0,
+      localInvalidationCalls: 0,
+      remoteInvalidationCalls: 0,
+    };
+
+    return Effect.gen(function* () {
+      const broadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
+
+      for (let index = 0; index < VcsStatusBroadcaster.VCS_STATUS_CACHE_CAPACITY; index += 1) {
+        yield* broadcaster.getStatus({ cwd: `/repo-${index}` });
+      }
+
+      assert.equal(state.localStatusCalls, VcsStatusBroadcaster.VCS_STATUS_CACHE_CAPACITY);
+      assert.equal(state.remoteStatusCalls, VcsStatusBroadcaster.VCS_STATUS_CACHE_CAPACITY);
+
+      yield* broadcaster.getStatus({ cwd: "/repo-0" });
+      yield* broadcaster.getStatus({ cwd: "/repo-overflow" });
+      yield* broadcaster.getStatus({ cwd: "/repo-0" });
+
+      assert.equal(state.localStatusCalls, VcsStatusBroadcaster.VCS_STATUS_CACHE_CAPACITY + 1);
+      assert.equal(state.remoteStatusCalls, VcsStatusBroadcaster.VCS_STATUS_CACHE_CAPACITY + 1);
+
+      yield* broadcaster.getStatus({ cwd: "/repo-1" });
+
+      assert.equal(state.localStatusCalls, VcsStatusBroadcaster.VCS_STATUS_CACHE_CAPACITY + 2);
+      assert.equal(state.remoteStatusCalls, VcsStatusBroadcaster.VCS_STATUS_CACHE_CAPACITY + 2);
+    }).pipe(Effect.provide(makeTestLayer(state)));
+  });
+
   it.effect("refreshes the cached snapshot after explicit invalidation", () => {
     const state = {
       currentLocalStatus: baseLocalStatus,
@@ -724,6 +758,43 @@ describe("VcsStatusBroadcaster", () => {
       defectTags: ["TypeError"],
       interruptionCount: 0,
     });
+  });
+
+  it.effect("evicts the cached status after the last stream subscriber disconnects", () => {
+    const state = {
+      currentLocalStatus: baseLocalStatus,
+      currentRemoteStatus: baseRemoteStatus,
+      localStatusCalls: 0,
+      remoteStatusCalls: 0,
+      localInvalidationCalls: 0,
+      remoteInvalidationCalls: 0,
+    };
+
+    return Effect.gen(function* () {
+      const broadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
+      const remoteUpdated = yield* Deferred.make<VcsStatusStreamEvent>();
+      const scope = yield* Scope.make();
+      yield* Stream.runForEach(
+        broadcaster.streamStatus(
+          { cwd: "/repo" },
+          { automaticRemoteRefreshInterval: Effect.succeed(Duration.zero) },
+        ),
+        (event) =>
+          event._tag === "remoteUpdated"
+            ? Deferred.succeed(remoteUpdated, event).pipe(Effect.ignore)
+            : Effect.void,
+      ).pipe(Effect.forkIn(scope));
+
+      yield* Deferred.await(remoteUpdated);
+      assert.equal(state.localStatusCalls, 1);
+      assert.equal(state.remoteStatusCalls, 1);
+
+      yield* Scope.close(scope, Exit.void);
+      yield* broadcaster.getStatus({ cwd: "/repo" });
+
+      assert.equal(state.localStatusCalls, 2);
+      assert.equal(state.remoteStatusCalls, 2);
+    }).pipe(Effect.provide(makeTestLayer(state)));
   });
 
   it.effect("stops the remote poller after the last stream subscriber disconnects", () => {
