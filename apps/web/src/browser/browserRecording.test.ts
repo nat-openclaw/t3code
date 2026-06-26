@@ -39,7 +39,11 @@ vi.mock("./browserSurfaceStore", () => ({
   },
 }));
 
-import { startBrowserRecording, stopBrowserRecording } from "./browserRecording";
+import {
+  BrowserRecordingOperationError,
+  startBrowserRecording,
+  stopBrowserRecording,
+} from "./browserRecording";
 
 class FakeMediaRecorder {
   static isTypeSupported(): boolean {
@@ -110,5 +114,52 @@ describe("browser recording surface preparation", () => {
     ]);
 
     await stopBrowserRecording("recording-tab");
+  });
+
+  it("does not start a screencast after stopping during the paint wait", async () => {
+    const frameCallbacks: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frameCallbacks.push(callback);
+      return frameCallbacks.length;
+    });
+
+    const startPromise = startBrowserRecording("recording-tab");
+    const rejectedStart = expect(startPromise).rejects.toBeInstanceOf(
+      BrowserRecordingOperationError,
+    );
+    await vi.waitFor(() => expect(frameCallbacks).toHaveLength(1));
+
+    await stopBrowserRecording("recording-tab");
+    frameCallbacks.shift()?.(1);
+    expect(frameCallbacks).toHaveLength(1);
+    frameCallbacks.shift()?.(2);
+
+    await rejectedStart;
+    expect(startScreencast).not.toHaveBeenCalled();
+    expect(events).toEqual(["publish:recording-tab", "clear", "clear"]);
+  });
+
+  it("stops a screencast that finishes starting after cancellation", async () => {
+    let finishStartingScreencast: (() => void) | undefined;
+    startScreencast.mockImplementationOnce(async () => {
+      events.push("start-screencast");
+      await new Promise<void>((resolve) => {
+        finishStartingScreencast = resolve;
+      });
+    });
+
+    const startPromise = startBrowserRecording("recording-tab");
+    const rejectedStart = expect(startPromise).rejects.toBeInstanceOf(
+      BrowserRecordingOperationError,
+    );
+    await vi.waitFor(() => expect(startScreencast).toHaveBeenCalledOnce());
+
+    await stopBrowserRecording("recording-tab");
+    expect(stopScreencast).toHaveBeenCalledOnce();
+    finishStartingScreencast?.();
+
+    await rejectedStart;
+    expect(stopScreencast).toHaveBeenCalledTimes(2);
+    expect(events.at(-1)).toBe("clear");
   });
 });

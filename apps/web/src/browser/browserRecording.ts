@@ -76,6 +76,7 @@ interface ActiveRecording {
   readonly chunks: Blob[];
   readonly mimeType: string;
   readonly startedAt: string;
+  stopping: boolean;
 }
 
 const activeBrowserRecordingTabIdAtom = Atom.make<string | null>(null).pipe(
@@ -163,6 +164,19 @@ const clearActiveRecording = (recording: ActiveRecording): void => {
   appAtomRegistry.set(browserRecordingSurfaceTabIdAtom, null);
 };
 
+const recordingStartupCancelledError = (
+  recording: ActiveRecording,
+  cause: unknown = new Error(`Browser recording startup was cancelled for tab ${recording.tabId}.`),
+): BrowserRecordingOperationError =>
+  new BrowserRecordingOperationError({
+    operation: "start-screencast",
+    tabId: recording.tabId,
+    cause,
+  });
+
+const isRecordingStarting = (recording: ActiveRecording): boolean =>
+  active === recording && !recording.stopping;
+
 export async function startBrowserRecording(tabId: string): Promise<string> {
   const bridge = previewBridge;
   if (!bridge) throw new BrowserRecordingUnavailableError({ tabId });
@@ -206,7 +220,16 @@ export async function startBrowserRecording(tabId: string): Promise<string> {
   recorder.addEventListener("dataavailable", (event) => {
     if (event.data.size > 0) chunks.push(event.data);
   });
-  const recording = { tabId, canvas, context, recorder, chunks, mimeType, startedAt };
+  const recording: ActiveRecording = {
+    tabId,
+    canvas,
+    context,
+    recorder,
+    chunks,
+    mimeType,
+    startedAt,
+    stopping: false,
+  };
   active = recording;
   try {
     unsubscribeFrames ??= bridge.recording.onFrame(drawFrame);
@@ -230,9 +253,15 @@ export async function startBrowserRecording(tabId: string): Promise<string> {
   }
   appAtomRegistry.set(browserRecordingSurfaceTabIdAtom, tabId);
   await waitForBrowserRecordingSurfacePaint();
+  if (!isRecordingStarting(recording)) {
+    throw recordingStartupCancelledError(recording);
+  }
   try {
     await bridge.recording.startScreencast(tabId);
   } catch (cause) {
+    if (!isRecordingStarting(recording)) {
+      throw recordingStartupCancelledError(recording, cause);
+    }
     let cleanupCause: unknown;
     try {
       await stopMediaRecorder(recorder);
@@ -254,6 +283,21 @@ export async function startBrowserRecording(tabId: string): Promise<string> {
             ),
     });
   }
+  if (!isRecordingStarting(recording)) {
+    try {
+      await bridge.recording.stopScreencast(tabId);
+    } catch (cause) {
+      throw recordingStartupCancelledError(
+        recording,
+        new AggregateError(
+          [new Error(`Browser recording startup was cancelled for tab ${tabId}.`), cause],
+          `Browser recording startup cancellation failed for tab ${tabId}.`,
+          { cause },
+        ),
+      );
+    }
+    throw recordingStartupCancelledError(recording);
+  }
   appAtomRegistry.set(activeBrowserRecordingTabIdAtom, tabId);
   return startedAt;
 }
@@ -264,6 +308,8 @@ export async function stopBrowserRecording(
   const bridge = previewBridge;
   const recording = active;
   if (!bridge || !recording || recording.tabId !== tabId) return null;
+  if (recording.stopping) return null;
+  recording.stopping = true;
   let result:
     | { readonly _tag: "Success"; readonly artifact: DesktopPreviewRecordingArtifact }
     | { readonly _tag: "Failure"; readonly error: unknown };
