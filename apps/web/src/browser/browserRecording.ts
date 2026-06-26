@@ -230,6 +230,9 @@ export async function startBrowserRecording(tabId: string): Promise<string> {
   }
   appAtomRegistry.set(browserRecordingSurfaceTabIdAtom, tabId);
   await waitForBrowserRecordingSurfacePaint();
+  if (active !== recording) {
+    return recording.startedAt;
+  }
   try {
     await bridge.recording.startScreencast(tabId);
   } catch (cause) {
