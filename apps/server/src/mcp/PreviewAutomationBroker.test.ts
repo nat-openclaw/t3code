@@ -174,6 +174,96 @@ it.effect("does not let an older response replace a newer explicit tab target", 
   ),
 );
 
+it.effect("does not replace the default tab with a globally stopped recording tab", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const broker = yield* makeBroker;
+      const browsingTabId = PreviewTabId.make("tab-session-b");
+      const recordingTabId = PreviewTabId.make("tab-session-a-recording");
+      const routedRequests: RoutedRequest[] = [];
+      const requests = requestsFrom(yield* broker.connect(makeHost()));
+      yield* Stream.runForEach(requests, (request) => {
+        routedRequests.push(request);
+        return broker.respond({
+          clientId: "client-1",
+          connectionId: request.connectionId,
+          requestId: request.requestId,
+          ok: true,
+          result:
+            request.operation === "open"
+              ? { available: true, tabId: browsingTabId }
+              : request.operation === "recordingStop"
+                ? { id: "recording-1", tabId: recordingTabId }
+                : { url: "http://localhost:3200" },
+        });
+      }).pipe(Effect.forkScoped);
+      yield* Effect.yieldNow;
+
+      yield* broker.invoke({ scope, operation: "open", input: {} });
+      yield* broker.invoke({ scope, operation: "recordingStop", input: {} });
+      yield* broker.invoke({ scope, operation: "snapshot", input: {} });
+
+      expect(routedRequests.at(-1)?.tabId).toBe(browsingTabId);
+    }),
+  ),
+);
+
+it.effect("advances tab ordering when a response does not include a tab", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const broker = yield* makeBroker;
+      const browsingTabId = PreviewTabId.make("tab-current");
+      const staleResponseTabId = PreviewTabId.make("tab-stale-response");
+      const releaseOlderResponse = yield* Deferred.make<void>();
+      const routedRequests: RoutedRequest[] = [];
+      const requests = requestsFrom(yield* broker.connect(makeHost()));
+      yield* Stream.runForEach(requests, (request) => {
+        routedRequests.push(request);
+        const marker =
+          typeof request.input === "object" && request.input !== null && "marker" in request.input
+            ? request.input.marker
+            : undefined;
+        const response = Effect.gen(function* () {
+          if (marker === "older") {
+            yield* Deferred.await(releaseOlderResponse);
+          }
+          yield* broker.respond({
+            clientId: "client-1",
+            connectionId: request.connectionId,
+            requestId: request.requestId,
+            ok: true,
+            result:
+              request.operation === "open"
+                ? { available: true, tabId: browsingTabId }
+                : marker === "older"
+                  ? { tabId: staleResponseTabId }
+                  : { url: "http://localhost:3200" },
+          });
+          if (marker === "newer") {
+            yield* Deferred.succeed(releaseOlderResponse, undefined);
+          }
+        });
+        return response.pipe(Effect.forkScoped, Effect.asVoid);
+      }).pipe(Effect.forkScoped);
+      yield* Effect.yieldNow;
+
+      yield* broker.invoke({ scope, operation: "open", input: {} });
+      const older = yield* broker
+        .invoke({ scope, operation: "snapshot", input: { marker: "older" } })
+        .pipe(Effect.forkScoped);
+      yield* Effect.yieldNow;
+      const newer = yield* broker
+        .invoke({ scope, operation: "snapshot", input: { marker: "newer" } })
+        .pipe(Effect.forkScoped);
+      yield* Fiber.join(newer);
+      yield* Fiber.join(older);
+      yield* broker.invoke({ scope, operation: "snapshot", input: {} });
+
+      expect(routedRequests.at(-1)?.tabId).toBe(browsingTabId);
+    }),
+  ),
+);
+
 it.effect("announces a live replacement stream before delivering requests", () =>
   Effect.scoped(
     Effect.gen(function* () {

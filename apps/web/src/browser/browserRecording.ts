@@ -76,7 +76,7 @@ interface ActiveRecording {
   readonly chunks: Blob[];
   readonly mimeType: string;
   readonly startedAt: string;
-  stopping: boolean;
+  phase: "starting" | "recording" | "stopping";
 }
 
 const activeBrowserRecordingTabIdAtom = Atom.make<string | null>(null).pipe(
@@ -175,13 +175,13 @@ const recordingStartupCancelledError = (
   });
 
 const isRecordingStarting = (recording: ActiveRecording): boolean =>
-  active === recording && !recording.stopping;
+  active === recording && recording.phase === "starting";
 
 export async function startBrowserRecording(tabId: string): Promise<string> {
   const bridge = previewBridge;
   if (!bridge) throw new BrowserRecordingUnavailableError({ tabId });
   if (active) {
-    if (active.tabId === tabId) return active.startedAt;
+    if (active.tabId === tabId && active.phase === "recording") return active.startedAt;
     throw new BrowserRecordingConflictError({
       requestedTabId: tabId,
       activeTabId: active.tabId,
@@ -228,7 +228,7 @@ export async function startBrowserRecording(tabId: string): Promise<string> {
     chunks,
     mimeType,
     startedAt,
-    stopping: false,
+    phase: "starting",
   };
   active = recording;
   try {
@@ -298,6 +298,7 @@ export async function startBrowserRecording(tabId: string): Promise<string> {
     }
     throw recordingStartupCancelledError(recording);
   }
+  recording.phase = "recording";
   appAtomRegistry.set(activeBrowserRecordingTabIdAtom, tabId);
   return startedAt;
 }
@@ -308,8 +309,8 @@ export async function stopBrowserRecording(
   const bridge = previewBridge;
   const recording = active;
   if (!bridge || !recording || recording.tabId !== tabId) return null;
-  if (recording.stopping) return null;
-  recording.stopping = true;
+  if (recording.phase === "stopping") return null;
+  recording.phase = "stopping";
   let result:
     | { readonly _tag: "Success"; readonly artifact: DesktopPreviewRecordingArtifact }
     | { readonly _tag: "Failure"; readonly error: unknown };

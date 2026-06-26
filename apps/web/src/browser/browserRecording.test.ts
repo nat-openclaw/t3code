@@ -40,6 +40,7 @@ vi.mock("./browserSurfaceStore", () => ({
 }));
 
 import {
+  BrowserRecordingConflictError,
   BrowserRecordingOperationError,
   startBrowserRecording,
   stopBrowserRecording,
@@ -114,6 +115,48 @@ describe("browser recording surface preparation", () => {
     ]);
 
     await stopBrowserRecording("recording-tab");
+  });
+
+  it("does not report success for a second start while the first is still starting", async () => {
+    let finishStartingScreencast: (() => void) | undefined;
+    startScreencast.mockImplementationOnce(async () => {
+      events.push("start-screencast");
+      await new Promise<void>((resolve) => {
+        finishStartingScreencast = resolve;
+      });
+    });
+
+    const firstStart = startBrowserRecording("recording-tab");
+    await vi.waitFor(() => expect(startScreencast).toHaveBeenCalledOnce());
+
+    await expect(startBrowserRecording("recording-tab")).rejects.toBeInstanceOf(
+      BrowserRecordingConflictError,
+    );
+
+    finishStartingScreencast?.();
+    await firstStart;
+    await stopBrowserRecording("recording-tab");
+  });
+
+  it("does not report success for a start while the recording is stopping", async () => {
+    let finishStoppingScreencast: (() => void) | undefined;
+    stopScreencast.mockImplementationOnce(async () => {
+      await new Promise<void>((resolve) => {
+        finishStoppingScreencast = resolve;
+      });
+      return undefined;
+    });
+
+    await startBrowserRecording("recording-tab");
+    const stopPromise = stopBrowserRecording("recording-tab");
+    await vi.waitFor(() => expect(stopScreencast).toHaveBeenCalledOnce());
+
+    await expect(startBrowserRecording("recording-tab")).rejects.toBeInstanceOf(
+      BrowserRecordingConflictError,
+    );
+
+    finishStoppingScreencast?.();
+    await stopPromise;
   });
 
   it("does not start a screencast after stopping during the paint wait", async () => {

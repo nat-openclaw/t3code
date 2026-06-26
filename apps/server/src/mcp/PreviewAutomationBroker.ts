@@ -542,34 +542,33 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
       });
     });
     const result = yield* awaitResponse().pipe(Effect.ensuring(removePending));
-    const responseTabId = readResultTabId(result);
+    // A stop artifact identifies the globally recorded tab, not the caller's browsing target.
+    const responseTabId = input.operation === "recordingStop" ? undefined : readResultTabId(result);
     const resultTabId = responseTabId === undefined ? input.tabId : responseTabId;
-    if (resultTabId !== undefined) {
-      const assignmentKey = hostAssignmentKey(input.scope);
-      yield* SynchronizedRef.update(state, (current) => {
-        const assignment = current.assignments.get(assignmentKey);
-        if (
-          !assignment ||
-          assignment.connectionId !== connection.connectionId ||
-          assignment.queue !== connection.queue ||
-          (assignment.tabSequence ?? -1) > requestSequence
-        ) {
-          return current;
-        }
-        const assignments = new Map(current.assignments);
-        if (resultTabId === null) {
-          const { tabId: _tabId, ...withoutTabId } = assignment;
-          assignments.set(assignmentKey, { ...withoutTabId, tabSequence: requestSequence });
-        } else {
-          assignments.set(assignmentKey, {
-            ...assignment,
-            tabId: resultTabId,
-            tabSequence: requestSequence,
-          });
-        }
-        return { ...current, assignments };
-      });
-    }
+    const assignmentKey = hostAssignmentKey(input.scope);
+    yield* SynchronizedRef.update(state, (current) => {
+      const assignment = current.assignments.get(assignmentKey);
+      if (
+        !assignment ||
+        assignment.connectionId !== connection.connectionId ||
+        assignment.queue !== connection.queue ||
+        (assignment.tabSequence ?? -1) > requestSequence
+      ) {
+        return current;
+      }
+      const assignments = new Map(current.assignments);
+      if (resultTabId === null) {
+        const { tabId: _tabId, ...withoutTabId } = assignment;
+        assignments.set(assignmentKey, { ...withoutTabId, tabSequence: requestSequence });
+      } else {
+        assignments.set(assignmentKey, {
+          ...assignment,
+          ...(resultTabId === undefined ? {} : { tabId: resultTabId }),
+          tabSequence: requestSequence,
+        });
+      }
+      return { ...current, assignments };
+    });
     return result;
   });
 
