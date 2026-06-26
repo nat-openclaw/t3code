@@ -181,12 +181,17 @@ export function HostedBrowserWebview(props: {
           pointerEvents: "auto" as const,
         }
       : {
-          left: 0,
-          top: 0,
+          // Chromium must keep painting a background guest while recording
+          // so Page.startScreencast continues to emit frames. Every other
+          // inactive guest is both hidden and moved offscreen; z-index alone
+          // is not a reliable visibility boundary for Electron webviews.
+          left: recording ? 0 : -100_000,
+          top: recording ? 0 : -100_000,
           width: hiddenSize.width,
           height: hiddenSize.height,
           zIndex: recording ? 0 : -1,
           pointerEvents: "none" as const,
+          visibility: recording ? ("visible" as const) : ("hidden" as const),
         };
 
   return (
