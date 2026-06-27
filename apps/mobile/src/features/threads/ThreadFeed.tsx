@@ -20,17 +20,19 @@ import {
   type CustomRenderers,
   type NodeStyleOverrides,
   type PartialMarkdownTheme,
+  type TokenType,
 } from "react-native-nitro-markdown";
 import {
   ActivityIndicator,
   Image,
   Linking,
-  type LayoutChangeEvent,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text as NativeText,
   type ColorValue,
+  type LayoutChangeEvent,
   useColorScheme,
   useWindowDimensions,
   View,
@@ -38,7 +40,7 @@ import {
 import { TouchableOpacity } from "react-native-gesture-handler";
 import ImageViewing from "react-native-image-viewing";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { type SharedValue } from "react-native-reanimated";
+import type { SharedValue } from "react-native-reanimated";
 import { useThemeColor } from "../../lib/useThemeColor";
 import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import {
@@ -64,7 +66,7 @@ import {
 } from "../review/nativeReviewDiffAdapter";
 import { buildReviewParsedDiff } from "../review/reviewModel";
 import { cn } from "../../lib/cn";
-import { deriveCenteredContentHorizontalPadding, type LayoutVariant } from "../../lib/layout";
+import type { LayoutVariant } from "../../lib/layout";
 import { buildThreadFilesNavigation } from "../../lib/routes";
 import { MOBILE_CODE_SURFACE, MOBILE_TYPOGRAPHY } from "../../lib/typography";
 import { markdownFileIconSource } from "@t3tools/mobile-markdown-text/file-icons";
@@ -78,6 +80,7 @@ import type { ThreadContentPresentation } from "./threadContentPresentation";
 import { ThreadWorkGroupToggle, ThreadWorkLog } from "./thread-work-log";
 import { useAssetUrl } from "../../state/assets";
 import { resolveWorkspaceRelativeFilePath } from "../files/filePath";
+import { highlightMarkdownCode } from "../../lib/markdownCodeHighlighter";
 
 const MESSAGE_TIME_FORMATTER = new Intl.DateTimeFormat(undefined, {
   hour: "numeric",
@@ -106,9 +109,7 @@ export interface ThreadFeedProps {
   readonly contentInsetEndAdjustment: SharedValue<number>;
   readonly contentTopInset?: number;
   readonly contentBottomInset?: number;
-  readonly contentMaxWidth?: number;
   readonly layoutVariant?: LayoutVariant;
-  readonly usesAutomaticContentInsets?: boolean;
   readonly skills?: ReadonlyArray<SelectableMarkdownSkill>;
 }
 
@@ -174,6 +175,35 @@ const MARKDOWN_COLORS = {
     userFenceText: "#ffffff",
   },
 } as const;
+
+const MARKDOWN_MONO_FONT = Platform.select({
+  ios: "ui-monospace",
+  android: "monospace",
+  default: "monospace",
+});
+
+const MARKDOWN_CODE_TOKEN_COLORS: Record<"light" | "dark", Record<TokenType, string>> = {
+  light: {
+    keyword: "#6d28d9",
+    string: "#047857",
+    comment: "#6b7280",
+    number: "#b45309",
+    operator: "#0f766e",
+    punctuation: "#4b5563",
+    type: "#1d4ed8",
+    default: MARKDOWN_COLORS.light.codeText,
+  },
+  dark: {
+    keyword: "#c4b5fd",
+    string: "#6ee7b7",
+    comment: "#94a3b8",
+    number: "#fbbf24",
+    operator: "#67e8f9",
+    punctuation: "#cbd5e1",
+    type: "#93c5fd",
+    default: MARKDOWN_COLORS.dark.codeText,
+  },
+};
 
 interface MarkdownStyleSets {
   readonly user: MarkdownStyleSet;
@@ -276,7 +306,8 @@ function useReviewCommentColors(): ReviewCommentColors {
 
 function useMarkdownStyles(onLinkPress: (href: string) => void): MarkdownStyleSets {
   const colorScheme = useColorScheme();
-  const colors = MARKDOWN_COLORS[colorScheme === "dark" ? "dark" : "light"];
+  const themeMode = colorScheme === "dark" ? "dark" : "light";
+  const colors = MARKDOWN_COLORS[themeMode];
   const inlineSkillForeground = String(useThemeColor("--color-inline-skill-foreground"));
 
   return useMemo(() => {
@@ -295,6 +326,7 @@ function useMarkdownStyles(onLinkPress: (href: string) => void): MarkdownStyleSe
     const markdownUserInlineCodeText = colors.userInlineCodeText;
     const markdownUserFenceBg = colors.userFenceBackground;
     const markdownUserFenceText = colors.userFenceText;
+    const markdownCodeTokenColors = MARKDOWN_CODE_TOKEN_COLORS[themeMode];
 
     const baseTheme: PartialMarkdownTheme = {
       colors: {
@@ -331,7 +363,7 @@ function useMarkdownStyles(onLinkPress: (href: string) => void): MarkdownStyleSe
       fontFamilies: {
         regular: "DMSans_400Regular",
         heading: "DMSans_700Bold",
-        mono: "ui-monospace",
+        mono: MARKDOWN_MONO_FONT,
       },
       headingWeight: "700",
       borderRadius: {
@@ -386,6 +418,7 @@ function useMarkdownStyles(onLinkPress: (href: string) => void): MarkdownStyleSe
       blockBackgroundColor: string,
       blockTextColor: string,
       preserveSoftBreaks: boolean,
+      highlightCode: boolean,
     ): CustomRenderers => ({
       link: ({ children, href = "" }) => {
         const presentation = resolveMarkdownLinkPresentation(href);
@@ -477,9 +510,10 @@ function useMarkdownStyles(onLinkPress: (href: string) => void): MarkdownStyleSe
           <NativeText
             style={{
               color: inlineCodeTextColor,
-              fontFamily: "ui-monospace",
+              fontFamily: MARKDOWN_MONO_FONT,
               fontSize: MOBILE_TYPOGRAPHY.label.fontSize,
               lineHeight: 22,
+              ...(Platform.OS === "android" ? { includeFontPadding: false } : null),
             }}
           >
             {value}
@@ -491,59 +525,84 @@ function useMarkdownStyles(onLinkPress: (href: string) => void): MarkdownStyleSe
             soft_break: () => <NativeText>{"\n"}</NativeText>,
           }
         : {}),
-      code_block: ({ content, language }) => (
-        <View
-          style={{
-            backgroundColor: blockBackgroundColor,
-            borderRadius: 10,
-            borderWidth: 1,
-            borderColor: markdownHrColor,
-            marginVertical: 12,
-            overflow: "hidden",
-          }}
-        >
-          {language ? (
-            <View
-              style={{
-                borderBottomWidth: 1,
-                borderBottomColor: markdownHrColor,
-                paddingHorizontal: 14,
-                paddingVertical: 8,
-              }}
-            >
-              <NativeText
+      code_block: ({ content = "", language }) => {
+        const highlightedTokens =
+          highlightCode && language ? highlightMarkdownCode(language, content) : null;
+        let tokenOffset = 0;
+
+        return (
+          <View
+            style={{
+              alignSelf: "stretch",
+              backgroundColor: blockBackgroundColor,
+              borderRadius: 8,
+              borderWidth: 1,
+              borderColor: markdownHrColor,
+              marginVertical: 12,
+              maxWidth: "100%",
+              minWidth: 0,
+              overflow: "hidden",
+            }}
+          >
+            {language ? (
+              <View
                 style={{
-                  color: markdownBodyColor,
-                  fontFamily: "ui-monospace",
-                  fontSize: MOBILE_TYPOGRAPHY.label.fontSize,
-                  opacity: 0.7,
-                  textTransform: "uppercase",
+                  borderBottomWidth: 1,
+                  borderBottomColor: markdownHrColor,
+                  paddingHorizontal: 14,
+                  paddingVertical: 8,
                 }}
               >
-                {language}
-              </NativeText>
-            </View>
-          ) : null}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            bounces={false}
-            contentContainerStyle={{ paddingHorizontal: 14, paddingVertical: 12 }}
-          >
-            <NativeText
-              selectable
-              style={{
-                color: blockTextColor,
-                fontFamily: "ui-monospace",
-                fontSize: MOBILE_TYPOGRAPHY.label.fontSize,
-                lineHeight: 18,
-              }}
+                <NativeText
+                  style={{
+                    color: markdownBodyColor,
+                    fontFamily: MARKDOWN_MONO_FONT,
+                    fontSize: MOBILE_TYPOGRAPHY.label.fontSize,
+                    opacity: 0.7,
+                    textTransform: "uppercase",
+                    ...(Platform.OS === "android" ? { includeFontPadding: false } : null),
+                  }}
+                >
+                  {language}
+                </NativeText>
+              </View>
+            ) : null}
+            <ScrollView
+              horizontal
+              bounces={false}
+              nestedScrollEnabled={Platform.OS === "android"}
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal: 14, paddingVertical: 12 }}
             >
-              {content}
-            </NativeText>
-          </ScrollView>
-        </View>
-      ),
+              <NativeText
+                selectable
+                style={{
+                  color: blockTextColor,
+                  fontFamily: MARKDOWN_MONO_FONT,
+                  fontSize: MOBILE_TYPOGRAPHY.label.fontSize,
+                  lineHeight: 20,
+                  ...(Platform.OS === "android" ? { includeFontPadding: false } : null),
+                }}
+              >
+                {highlightedTokens
+                  ? highlightedTokens.map((token) => {
+                      const startOffset = tokenOffset;
+                      tokenOffset += token.text.length;
+                      return (
+                        <NativeText
+                          key={`${startOffset}:${token.type}`}
+                          style={{ color: markdownCodeTokenColors[token.type] }}
+                        >
+                          {token.text}
+                        </NativeText>
+                      );
+                    })
+                  : content}
+              </NativeText>
+            </ScrollView>
+          </View>
+        );
+      },
     });
 
     const userTheme: PartialMarkdownTheme = {
@@ -601,6 +660,7 @@ function useMarkdownStyles(onLinkPress: (href: string) => void): MarkdownStyleSe
           markdownUserFenceBg,
           markdownUserFenceText,
           true,
+          false,
         ),
         nativeTextStyle: {
           color: markdownUserBodyColor,
@@ -630,6 +690,7 @@ function useMarkdownStyles(onLinkPress: (href: string) => void): MarkdownStyleSe
           markdownCodeBg,
           markdownCodeText,
           false,
+          true,
         ),
         nativeTextStyle: {
           color: markdownBodyColor,
@@ -1146,12 +1207,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     headers?: Record<string, string>;
   } | null>(null);
   const horizontalPadding = props.layoutVariant === "split" ? 20 : 16;
-  const contentHorizontalPadding = deriveCenteredContentHorizontalPadding({
-    viewportWidth,
-    maxContentWidth: props.contentMaxWidth ?? null,
-    minimumPadding: horizontalPadding,
-  });
-  const contentWidth = Math.max(0, viewportWidth - contentHorizontalPadding * 2);
+  const contentWidth = Math.max(0, viewportWidth - horizontalPadding * 2);
   const userBubbleMaxWidth = contentWidth * 0.85;
   const reviewCommentBubbleWidth = Math.min(Math.max(280, contentWidth * 0.85), contentWidth);
   const insets = useSafeAreaInsets();
@@ -1203,7 +1259,6 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       markdownStyles,
       reviewCommentColors,
       userBubbleColor,
-      viewportWidth,
     }),
     [
       copiedRowId,
@@ -1212,7 +1267,6 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       markdownStyles,
       reviewCommentColors,
       userBubbleColor,
-      viewportWidth,
     ],
   );
   const expandedWorkGroupIds = useMemo(() => {
@@ -1473,14 +1527,8 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
           ref={props.listRef}
           key={props.threadId}
           style={{ flex: 1 }}
-          contentInsetAdjustmentBehavior="never"
           automaticallyAdjustsScrollIndicatorInsets={false}
-          {...(props.usesAutomaticContentInsets
-            ? {
-                contentInset: { top: topContentInset, left: 0, right: 0, bottom: 0 },
-                scrollIndicatorInsets: { top: 0, left: 0, right: 0, bottom: 0 },
-              }
-            : { scrollIndicatorInsets: { top: topContentInset, bottom: 0 } })}
+          scrollIndicatorInsets={{ top: topContentInset, bottom: 0 }}
           {...(anchoredEndSpace ? { anchoredEndSpace } : {})}
           contentInsetEndAdjustment={props.contentInsetEndAdjustment}
           freeze={props.freeze}
@@ -1509,12 +1557,10 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
           keyboardLiftBehavior="whenAtEnd"
           estimatedItemSize={180}
           initialScrollAtEnd
-          ListHeaderComponent={
-            props.usesAutomaticContentInsets ? null : <View style={{ height: topContentInset }} />
-          }
+          ListHeaderComponent={<View style={{ height: topContentInset }} />}
           contentContainerStyle={{
             paddingTop: 12,
-            paddingHorizontal: contentHorizontalPadding,
+            paddingHorizontal: horizontalPadding,
           }}
         />
         {props.feed.length === 0 ? (

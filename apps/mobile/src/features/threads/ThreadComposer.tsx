@@ -19,6 +19,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type RefObject
 import {
   ActivityIndicator,
   Image,
+  Platform,
   Pressable,
   useColorScheme,
   View,
@@ -64,7 +65,7 @@ import { ComposerCommandPopover, type ComposerCommandItem } from "./ComposerComm
  * Height of the collapsed composer (pill + vertical padding, excluding safe-area inset).
  * Exported so the parent can compute feed overlap / content insets.
  */
-export const COMPOSER_COLLAPSED_CHROME = 60;
+export const COMPOSER_COLLAPSED_CHROME = Platform.OS === "android" ? 120 : 60;
 
 /**
  * Height of the expanded composer (card + toolbar + vertical padding, excluding safe-area inset).
@@ -213,8 +214,13 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
 
   const [previewImageUri, setPreviewImageUri] = useState<string | null>(null);
   const hasContent = props.draftMessage.trim().length > 0 || props.draftAttachments.length > 0;
-  const isExpanded = isFocused;
+  const isExpanded = isFocused || (Platform.OS === "android" && hasContent);
   const canSend = hasContent;
+
+  useEffect(() => {
+    if (Platform.OS !== "android") return;
+    onExpandedChange?.(isExpanded);
+  }, [isExpanded, onExpandedChange]);
 
   const onPressImage = useCallback(
     (uri: string) => {
@@ -233,12 +239,16 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
 
   const handleFocus = useCallback(() => {
     setIsFocused(true);
-    onExpandedChange?.(true);
+    if (Platform.OS !== "android") {
+      onExpandedChange?.(true);
+    }
   }, [onExpandedChange]);
 
   const handleBlur = useCallback(() => {
     setIsFocused(false);
-    onExpandedChange?.(false);
+    if (Platform.OS !== "android") {
+      onExpandedChange?.(false);
+    }
   }, [onExpandedChange]);
   const showStopAction =
     props.selectedThread.session?.status === "running" ||
@@ -775,14 +785,14 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
           ) : null}
         </ComposerSurface>
 
-        {/* Toolbar row — matches draft page layout (expanded only) */}
-        {isExpanded ? (
+        {isExpanded || Platform.OS === "android" ? (
           <ComposerToolbarRow paddingBottom={8} paddingHorizontal={0} paddingTop={8}>
             <ComposerToolbarScroller
               fadeOpaque={toolbarFadeOpaque}
               fadeTransparent={toolbarFadeTransparent}
             >
               <ComposerToolbarButton
+                accessibilityLabel="Add attachment"
                 icon="plus"
                 onPress={() => void props.onPickDraftImages()}
                 showChevron={false}
@@ -809,8 +819,9 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                   label={configurationLabel}
                 />
               </ControlPillMenu>
-              {showStopAction ? (
+              {isExpanded && showStopAction ? (
                 <ComposerToolbarButton
+                  accessibilityLabel="Stop"
                   icon="stop.fill"
                   variant="danger"
                   onPress={props.onStopThread}
@@ -818,14 +829,16 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                 />
               ) : null}
             </ComposerToolbarScroller>
-            <ComposerToolbarButton
-              accessibilityLabel={sendLabel}
-              icon="arrow.up"
-              variant="primary"
-              disabled={!canSend}
-              onPress={handleSend}
-              showChevron={false}
-            />
+            {isExpanded ? (
+              <ComposerToolbarButton
+                accessibilityLabel={sendLabel}
+                icon="arrow.up"
+                variant="primary"
+                disabled={!canSend}
+                onPress={handleSend}
+                showChevron={false}
+              />
+            ) : null}
           </ComposerToolbarRow>
         ) : null}
 

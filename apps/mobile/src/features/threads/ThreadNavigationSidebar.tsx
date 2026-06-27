@@ -1,5 +1,4 @@
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
-import { SymbolView } from "expo-symbols";
 import { memo, useCallback, useMemo, useRef, useState } from "react";
 import type { ColorValue } from "react-native";
 import { Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
@@ -7,6 +6,7 @@ import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSw
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "../../components/AppText";
+import { SymbolView } from "../../components/AppSymbol";
 import { StatusPill } from "../../components/StatusPill";
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import { relativeTime } from "../../lib/time";
