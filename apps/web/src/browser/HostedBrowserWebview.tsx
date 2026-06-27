@@ -15,6 +15,7 @@ import { browserViewportSettingKey } from "./browserViewportLayout";
 import { reconcileLockedAspectRatio } from "./browserDeviceToolbarState";
 import { BrowserDeviceToolbar } from "./BrowserDeviceToolbar";
 import { BrowserViewportResizeHandles } from "./BrowserViewportResizeHandles";
+import { stopBrowserRecording } from "./browserRecording";
 import { acquireDesktopTab, type AcquiredDesktopTab } from "./desktopTabLifetime";
 import {
   shouldPresentNativeSurface,
@@ -52,6 +53,7 @@ export function HostedBrowserWebview(props: {
     tabLeaseRef.current = lease;
     return () => {
       if (tabLeaseRef.current === lease) tabLeaseRef.current = null;
+      void stopBrowserRecording(tabId);
       void previewBridge?.setSurface(tabId, { x: 0, y: 0, width: 1, height: 1 }, false, 1);
       lease.release();
     };
@@ -171,9 +173,14 @@ export function HostedBrowserWebview(props: {
         if (cancelled) return;
         if (active && surfaceOccluded && !occlusionCaptureRequestedRef.current) {
           occlusionCaptureRequestedRef.current = true;
-          const frame = await bridge.captureSurfaceFrame(tabId);
+          const frame = await bridge.captureSurfaceFrame(tabId).catch(() => null);
           if (cancelled) return;
-          setOcclusionFrame(frame);
+          if (frame) {
+            setOcclusionFrame(frame);
+          } else {
+            occlusionCaptureRequestedRef.current = false;
+            await bridge.setSurface(tabId, bounds, false, layout.viewportScale);
+          }
           return;
         }
         await bridge.setSurface(tabId, bounds, presentNativeSurface, layout.viewportScale);
