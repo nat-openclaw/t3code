@@ -10,7 +10,7 @@ on:
 
 jobs:
   build-ios:
-    name: Build iOS (Simulator IPA)
+    name: Build iOS (Device IPA)
     runs-on: macos-15
     permissions:
       contents: write
@@ -70,14 +70,14 @@ jobs:
         working-directory: apps/mobile
         run: npx expo prebuild --clean --platform ios
 
-      - name: Build iOS (Simulator)
+      - name: Build iOS (Device)
         working-directory: apps/mobile/ios
         run: |
           xcodebuild \
             -workspace T3Code.xcworkspace \
             -scheme T3Code \
             -configuration Release \
-            -destination 'platform=iOS Simulator,name=iPhone 16 Pro Max,arch=arm64' \
+            -destination 'generic/platform=iOS' \
             -derivedDataPath build \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
@@ -113,13 +113,13 @@ jobs:
           echo "Found app: $APP_PATH"
           mkdir -p Payload
           cp -r "$APP_PATH" Payload/
-          zip -r T3Code-simulator.ipa Payload/
+          zip -r T3Code-device.ipa Payload/
           rm -rf Payload
-          echo "IPA size: $(du -h T3Code-simulator.ipa | cut -f1)"
+          echo "IPA size: $(du -h T3Code-device.ipa | cut -f1)"
 
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: T3Code-simulator
-          path: apps/mobile/T3Code-simulator.ipa
+          name: T3Code-device
+          path: apps/mobile/T3Code-device.ipa
           retention-days: 30
