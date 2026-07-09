@@ -82,6 +82,8 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
+            ARCHS=arm64 \
+            ONLY_ACTIVE_ARCH=YES \
             2>&1 | tee build.log
 
           EXIT_CODE=${PIPESTATUS[0]}
