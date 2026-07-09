@@ -27,7 +27,6 @@ jobs:
 
       - name: Select latest Xcode
         run: |
-          # Pick the newest Xcode available
           LATEST=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
           if [ -n "$LATEST" ]; then
             sudo xcode-select -s "$LATEST/Contents/Developer"
@@ -83,14 +82,17 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
-            2>&1 | tee build.log | tail -30
+            2>&1 | tee build.log
 
-          # Check exit code
           EXIT_CODE=${PIPESTATUS[0]}
           echo "xcodebuild exit code: $EXIT_CODE"
 
           if [ $EXIT_CODE -ne 0 ]; then
-            echo "Build failed. Last 50 lines of log:"
+            echo ""
+            echo "=== BUILD ERRORS ==="
+            grep -E "error:" build.log | grep -v "warning:" | tail -30
+            echo ""
+            echo "=== LAST 50 LINES ==="
             tail -50 build.log
             exit $EXIT_CODE
           fi
@@ -98,26 +100,20 @@ jobs:
       - name: Package IPA
         working-directory: apps/mobile
         run: |
-          # Find the built .app
           APP_PATH=$(find ios/build -name "T3Code.app" -type d | head -1)
           if [ -z "$APP_PATH" ]; then
-            echo "T3Code.app not found, listing build directory:"
-            find ios/build -name "*.app" -type d 2>/dev/null || echo "no .app files found"
-            echo "Full build dir:"
+            echo "T3Code.app not found"
+            find ios/build -name "*.app" -type d 2>/dev/null || echo "no .app files"
             ls -la ios/build/
             exit 1
           fi
 
           echo "Found app: $APP_PATH"
-
-          # Create IPA
           mkdir -p Payload
           cp -r "$APP_PATH" Payload/
           zip -r T3Code-simulator.ipa Payload/
           rm -rf Payload
-
           echo "IPA size: $(du -h T3Code-simulator.ipa | cut -f1)"
-          ls -la T3Code-simulator.ipa
 
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
