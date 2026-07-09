@@ -20,6 +20,24 @@ jobs:
       EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
 
     steps:
+      - name: List available Xcode versions
+        run: |
+          ls -d /Applications/Xcode*.app 2>/dev/null || echo "No Xcode found"
+          xcodebuild -version
+
+      - name: Select latest Xcode
+        run: |
+          # Pick the newest Xcode available
+          LATEST=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$LATEST" ]; then
+            sudo xcode-select -s "$LATEST/Contents/Developer"
+            echo "Selected: $LATEST"
+            xcodebuild -version
+          fi
+
+      - name: Check Swift version
+        run: swift --version
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -51,8 +69,7 @@ jobs:
 
       - name: Prebuild iOS
         working-directory: apps/mobile
-        run: |
-          npx expo prebuild --clean --platform ios
+        run: npx expo prebuild --clean --platform ios
 
       - name: Build iOS (Simulator)
         working-directory: apps/mobile/ios
@@ -65,7 +82,18 @@ jobs:
             -derivedDataPath build \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO | tail -50
+            CODE_SIGNING_ALLOWED=NO \
+            2>&1 | tee build.log | tail -30
+
+          # Check exit code
+          EXIT_CODE=${PIPESTATUS[0]}
+          echo "xcodebuild exit code: $EXIT_CODE"
+
+          if [ $EXIT_CODE -ne 0 ]; then
+            echo "Build failed. Last 50 lines of log:"
+            tail -50 build.log
+            exit $EXIT_CODE
+          fi
 
       - name: Package IPA
         working-directory: apps/mobile
