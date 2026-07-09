@@ -30,10 +30,14 @@ jobs:
         with:
           node-version-file: package.json
 
+      - name: Enable corepack
+        run: corepack enable
+
       - name: Install pnpm
         run: |
-          corepack enable
-          corepack prepare pnpm@11.10.0 --activate
+          pnpm_version="$(node --print "require('./package.json').packageManager.split('@').pop()")"
+          corepack prepare "pnpm@$pnpm_version" --activate
+          pnpm --version
 
       - name: Install dependencies
         run: pnpm install --ignore-scripts
@@ -43,11 +47,12 @@ jobs:
         with:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
+          packager: npm
 
       - name: Prebuild iOS
         working-directory: apps/mobile
         run: |
-          EXPO_NO_GIT_STATUS=1 expo prebuild --clean --platform ios
+          npx expo prebuild --clean --platform ios
 
       - name: Build iOS (Simulator)
         working-directory: apps/mobile/ios
@@ -60,7 +65,7 @@ jobs:
             -derivedDataPath build \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO | tail -20
+            CODE_SIGNING_ALLOWED=NO | tail -50
 
       - name: Package IPA
         working-directory: apps/mobile
@@ -69,9 +74,13 @@ jobs:
           APP_PATH=$(find ios/build -name "T3Code.app" -type d | head -1)
           if [ -z "$APP_PATH" ]; then
             echo "T3Code.app not found, listing build directory:"
-            find ios/build -name "*.app" -type d
+            find ios/build -name "*.app" -type d 2>/dev/null || echo "no .app files found"
+            echo "Full build dir:"
+            ls -la ios/build/
             exit 1
           fi
+
+          echo "Found app: $APP_PATH"
 
           # Create IPA
           mkdir -p Payload
@@ -80,6 +89,7 @@ jobs:
           rm -rf Payload
 
           echo "IPA size: $(du -h T3Code-simulator.ipa | cut -f1)"
+          ls -la T3Code-simulator.ipa
 
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
