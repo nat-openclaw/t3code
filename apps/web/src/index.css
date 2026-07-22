@@ -4,8 +4,80 @@
 /* Window Controls Overlay: active when Electron exposes native titlebar control geometry. */
 @custom-variant wco (&:is(.wco, .wco *));
 
+/* On mobile, morph the expanded hero composer into the compact docked
+   composer while it moves; the rest of the app remains visually stationary. */
+html[data-mobile-composer-route-transition="true"]::view-transition-old(root),
+html[data-mobile-composer-route-transition="true"]::view-transition-new(root) {
+  animation: none;
+}
+
+html[data-mobile-composer-route-transition="true"]::view-transition-group(t3-mobile-composer) {
+  animation-duration: 180ms;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+html[data-mobile-composer-route-transition="true"]::view-transition-image-pair(t3-mobile-composer) {
+  isolation: isolate;
+}
+
+html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobile-composer) {
+  animation: t3-mobile-composer-old 180ms linear both;
+  mix-blend-mode: normal;
+}
+
+html[data-mobile-composer-route-transition="true"]::view-transition-new(t3-mobile-composer) {
+  animation: t3-mobile-composer-new 180ms linear both;
+  mix-blend-mode: normal;
+}
+
+/* The expanded and compact composers have different internal layouts. Use a
+   brief crossfade while their shared wrapper moves so the layout change does
+   not read as a single-frame cut. */
+@keyframes t3-mobile-composer-old {
+  0%,
+  35% {
+    opacity: 1;
+  }
+  65%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes t3-mobile-composer-new {
+  0%,
+  35% {
+    opacity: 0;
+  }
+  65%,
+  100% {
+    opacity: 1;
+  }
+}
+
+html[data-mobile-composer-route-transition="true"]::view-transition-group(t3-mobile-draft-headline) {
+  animation-duration: 130ms;
+}
+
+html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobile-draft-headline) {
+  animation: t3-mobile-draft-headline-exit 130ms cubic-bezier(0.4, 0, 1, 1) both;
+  mix-blend-mode: normal;
+}
+
+@keyframes t3-mobile-draft-headline-exit {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
 :root {
   --app-scrollbar-width: 6px;
+  --desktop-window-right-resize-inset: 0px;
   --workspace-topbar-height: 52px;
   --workspace-controls-top: 0px;
   --workspace-controls-left: calc(env(safe-area-inset-left) + 0.75rem);
@@ -35,7 +107,13 @@
 }
 
 @theme inline {
+  --color-zinc-25: oklch(99.2% 0 0);
   --animate-skeleton: skeleton 2s -1s infinite linear;
+  /* Duty-cycled indicator animations: long holds with stepped ramps, so the
+     compositor updates discrete frames instead of every vsync. */
+  --animate-status-pulse: status-pulse 2s infinite;
+  --animate-status-ping: status-ping 2s infinite;
+  --animate-sidebar-working-text: sidebar-working-text 3.4s infinite;
   --font-sans:
     "DM Sans Variable", "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
     sans-serif;
@@ -66,6 +144,15 @@
   --color-card: var(--card);
   --color-foreground: var(--foreground);
   --color-background: var(--background);
+  --color-surface-raised: var(--surface-raised);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-muted-foreground: var(--sidebar-muted-foreground);
+  --color-sidebar-control-surface: var(--sidebar-control-surface);
+  --color-sidebar-row-hover: var(--sidebar-row-hover);
+  --color-sidebar-row-active: var(--sidebar-row-active);
+  --color-sidebar-row-selected: var(--sidebar-row-selected);
+  --color-sidebar-border: var(--sidebar-border);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -76,6 +163,51 @@
   @keyframes skeleton {
     to {
       background-position: -200% 0;
+    }
+  }
+  @keyframes status-pulse {
+    0%,
+    40% {
+      opacity: 1;
+      animation-timing-function: steps(6);
+    }
+    50%,
+    90% {
+      opacity: 0.5;
+      animation-timing-function: steps(6);
+    }
+    100% {
+      opacity: 1;
+    }
+  }
+  @keyframes status-ping {
+    /* Burst first (immediate feedback for click ripples), then hold
+       invisible for the rest of the cycle. Mirrors animate-ping's
+       75%-scale start. */
+    0% {
+      opacity: 0.9;
+      scale: 0.75;
+      animation-timing-function: steps(8);
+    }
+    40%,
+    100% {
+      opacity: 0;
+      scale: 2;
+    }
+  }
+  @keyframes sidebar-working-text {
+    0%,
+    36% {
+      opacity: 1;
+      animation-timing-function: steps(10);
+    }
+    50%,
+    86% {
+      opacity: 0.75;
+      animation-timing-function: steps(10);
+    }
+    100% {
+      opacity: 1;
     }
   }
 }
@@ -124,6 +256,45 @@
     }
   }
 
+  /* Stage-channel sidebar art; ::after ramps to the sidebar bg color and the
+     mask lets the surface grain show through at the boundary. Panels whose
+     background differs from the app chrome (e.g. sidebar v2) override
+     --sidebar-stage-fade so the art fades into their own surface color. */
+  .sidebar-stage-backdrop {
+    --stage-fade: var(--sidebar-stage-fade, var(--app-chrome-background));
+    mask-image: linear-gradient(to bottom, black 0%, black 55%, transparent 92%);
+    -webkit-mask-image: linear-gradient(to bottom, black 0%, black 55%, transparent 92%);
+  }
+
+  .sidebar-stage-backdrop::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      to bottom,
+      transparent 0%,
+      transparent 28%,
+      color-mix(in srgb, var(--stage-fade) 10%, transparent) 40%,
+      color-mix(in srgb, var(--stage-fade) 30%, transparent) 52%,
+      color-mix(in srgb, var(--stage-fade) 58%, transparent) 64%,
+      color-mix(in srgb, var(--stage-fade) 82%, transparent) 75%,
+      color-mix(in srgb, var(--stage-fade) 96%, transparent) 85%,
+      var(--stage-fade) 93%
+    );
+  }
+
+  .stage-blueprint {
+    --stage-bp-top: #67c2ff;
+    --stage-bp-mid: #347ff8;
+    --stage-bp-bottom: #1538d0;
+  }
+
+  .dark .stage-blueprint {
+    --stage-bp-top: #3a7ad1;
+    --stage-bp-mid: #2050ae;
+    --stage-bp-bottom: #101f6e;
+  }
+
   .workspace-topbar {
     display: flex;
     height: var(--workspace-topbar-height);
@@ -151,9 +322,24 @@
     padding-inline-end: calc(env(safe-area-inset-right) + 0.75rem);
   }
 
-  .chat-composer-glass,
+  .chat-composer-glass {
+    background: var(--surface-raised);
+  }
+
+  /* Mix from --background (not --card): the lower chrome is a full-width
+     strip over the main view, and a card-tinted wash reads as a lighter
+     seam against it when no content is scrolled underneath. The backdrop
+     blur, not the tint, carries the frosted effect. */
   .chat-composer-lower-chrome {
-    background: color-mix(in srgb, var(--card) 20%, transparent);
+    background: color-mix(in srgb, var(--background) 20%, transparent);
+  }
+
+  /* The translucent lower chrome lets the composer's shadow taper naturally
+     into the message canvas. Above the terminal drawer that same shadow reads
+     as a dirty light-to-black gradient, so end the workspace on an opaque
+     surface and let the drawer's border define the boundary instead. */
+  .chat-composer-lower-chrome[data-terminal-open="true"] {
+    background: var(--background);
   }
 
   .chat-composer-glass {
@@ -167,15 +353,20 @@
     backdrop-filter: blur(16px);
   }
 
-  .dark .chat-composer-glass,
+  .dark .chat-composer-glass {
+    background: var(--surface-raised);
+  }
+
   .dark .chat-composer-lower-chrome {
-    background: color-mix(in srgb, var(--card) 45%, transparent);
+    background: color-mix(in srgb, var(--background) 45%, transparent);
+  }
+
+  .dark .chat-composer-lower-chrome[data-terminal-open="true"] {
+    background: var(--background);
   }
 
   .dark .chat-composer-glass {
-    box-shadow:
-      0 18px 48px -20px rgb(0 0 0 / 60%),
-      0 4px 14px -7px rgb(0 0 0 / 40%);
+    box-shadow: none;
   }
 
   .chat-composer-lower-chrome {
@@ -192,9 +383,12 @@
   }
 
   @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-    .chat-composer-glass,
-    .chat-composer-lower-chrome {
+    .chat-composer-glass {
       background: var(--card);
+    }
+
+    .chat-composer-lower-chrome {
+      background: var(--background);
     }
   }
 }
@@ -215,6 +409,15 @@
   padding-right: max(env(safe-area-inset-right), 0px);
 }
 
+/* Grain texture for chrome surfaces that float above the body (see the
+   --surface-grain note). Layered over the element's background-color, so it
+   composes with bg-* utilities. */
+@utility surface-grain {
+  background-image: var(--surface-grain);
+  background-repeat: repeat;
+  background-size: 256px 256px;
+}
+
 /* Suppress all transitions during theme changes */
 .no-transitions,
 .no-transitions *,
@@ -227,24 +430,25 @@
 :root {
   color-scheme: light;
   --radius: 0.625rem;
-  --background: var(--color-white);
+  --background: var(--color-zinc-25);
   --app-chrome-background: var(--background);
-  --foreground: var(--color-neutral-800);
+  --surface-raised: color-mix(in srgb, var(--card) 20%, transparent);
+  --foreground: var(--color-zinc-800);
   --card: var(--color-white);
-  --card-foreground: var(--color-neutral-800);
+  --card-foreground: var(--color-zinc-800);
   --popover: var(--color-white);
-  --popover-foreground: var(--color-neutral-800);
+  --popover-foreground: var(--color-zinc-800);
   --primary: oklch(0.488 0.217 264);
   --primary-foreground: var(--color-white);
-  --secondary: --alpha(var(--color-black) / 4%);
-  --secondary-foreground: var(--color-neutral-800);
-  --muted: --alpha(var(--color-black) / 4%);
-  --muted-foreground: color-mix(in srgb, var(--color-neutral-500) 90%, var(--color-black));
-  --accent: --alpha(var(--color-black) / 4%);
-  --accent-foreground: var(--color-neutral-800);
+  --secondary: var(--color-zinc-50);
+  --secondary-foreground: var(--color-zinc-800);
+  --muted: var(--color-zinc-50);
+  --muted-foreground: var(--color-zinc-500);
+  --accent: var(--color-zinc-100);
+  --accent-foreground: var(--color-zinc-900);
   --destructive: var(--color-red-500);
-  --border: --alpha(var(--color-black) / 8%);
-  --input: --alpha(var(--color-black) / 10%);
+  --border: var(--color-zinc-200);
+  --input: var(--color-zinc-300);
   --ring: oklch(0.488 0.217 264);
   --destructive-foreground: var(--color-red-700);
   --info: var(--color-blue-500);
@@ -253,24 +457,35 @@
   --success-foreground: var(--color-emerald-700);
   --warning: var(--color-amber-500);
   --warning-foreground: var(--color-amber-700);
+  /* Fallbacks for standalone sidebar primitives. App sidebars override these
+     roles on their own root so the surface hierarchy stays out of page content. */
+  --sidebar: var(--card);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-muted-foreground: var(--muted-foreground);
+  --sidebar-control-surface: var(--accent);
+  --sidebar-row-hover: var(--accent);
+  --sidebar-row-active: var(--accent);
+  --sidebar-row-selected: var(--muted);
+  --sidebar-border: var(--border);
 
   @variant dark {
     color-scheme: dark;
-    --background: color-mix(in srgb, var(--color-neutral-950) 95%, var(--color-white));
+    --background: var(--color-zinc-950);
     --app-chrome-background: var(--background);
-    --foreground: var(--color-neutral-100);
-    --card: color-mix(in srgb, var(--background) 98%, var(--color-white));
-    --card-foreground: var(--color-neutral-100);
-    --popover: color-mix(in srgb, var(--background) 98%, var(--color-white));
-    --popover-foreground: var(--color-neutral-100);
+    --surface-raised: color-mix(in srgb, var(--card) 45%, transparent);
+    --foreground: var(--color-zinc-100);
+    --card: var(--color-zinc-900);
+    --card-foreground: var(--color-zinc-100);
+    --popover: var(--color-zinc-900);
+    --popover-foreground: var(--color-zinc-100);
     --primary: oklch(0.588 0.217 264);
     --primary-foreground: var(--color-white);
-    --secondary: --alpha(var(--color-white) / 4%);
-    --secondary-foreground: var(--color-neutral-100);
-    --muted: --alpha(var(--color-white) / 4%);
-    --muted-foreground: color-mix(in srgb, var(--color-neutral-500) 90%, var(--color-white));
-    --accent: --alpha(var(--color-white) / 4%);
-    --accent-foreground: var(--color-neutral-100);
+    --secondary: var(--color-zinc-900);
+    --secondary-foreground: var(--color-zinc-100);
+    --muted: var(--color-zinc-900);
+    --muted-foreground: var(--color-zinc-400);
+    --accent: var(--color-zinc-900);
+    --accent-foreground: var(--color-zinc-100);
     --destructive: color-mix(in srgb, var(--color-red-500) 90%, var(--color-white));
     --border: --alpha(var(--color-white) / 6%);
     --input: --alpha(var(--color-white) / 8%);
@@ -283,6 +498,29 @@
     --warning: var(--color-amber-500);
     --warning-foreground: var(--color-amber-400);
   }
+}
+
+[data-app-sidebar] {
+  --sidebar: var(--color-zinc-50);
+  --sidebar-foreground: var(--color-zinc-800);
+  --sidebar-muted-foreground: var(--color-zinc-500);
+  --sidebar-control-surface: var(--color-zinc-100);
+  --sidebar-row-hover: var(--color-zinc-25);
+  --sidebar-row-active: var(--color-white);
+  --sidebar-row-selected: var(--color-white);
+  --sidebar-border: var(--color-zinc-200);
+  --sidebar-stage-fade: var(--sidebar);
+}
+
+.dark [data-app-sidebar] {
+  --sidebar: var(--color-zinc-950);
+  --sidebar-foreground: var(--color-zinc-100);
+  --sidebar-muted-foreground: var(--color-zinc-400);
+  --sidebar-control-surface: var(--color-zinc-800);
+  --sidebar-row-hover: var(--color-zinc-900);
+  --sidebar-row-active: var(--color-zinc-900);
+  --sidebar-row-selected: var(--color-zinc-900);
+  --sidebar-border: var(--color-zinc-800);
 }
 
 body {
@@ -318,15 +556,26 @@ body {
   overflow-y: hidden;
   overscroll-behavior-y: none;
   padding-top: max(env(safe-area-inset-top), 0px);
+  padding-right: var(--desktop-window-right-resize-inset);
 }
 
-body::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  opacity: 0.035;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+.electron-windows {
+  --desktop-window-right-resize-inset: 6px;
+}
+
+/* App-chrome grain. Baked into each surface's own background (behind
+   content) rather than a fixed overlay on top: a full-viewport overlay
+   forces the compositor to re-blend every frame any animation produces,
+   which multiplied idle GPU cost. The overlay's 0.035 opacity lives in the
+   SVG rect instead. Surfaces that float over the body (e.g. the inset main
+   card) must opt in via the surface-grain utility, or they lose the
+   grain's subtle brightening and stand out against the body. */
+:root {
+  --surface-grain: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+}
+
+body {
+  background-image: var(--surface-grain);
   background-repeat: repeat;
   background-size: 256px 256px;
 }
@@ -812,10 +1061,33 @@ label:has(> select#reasoning-effort) select {
     #ec4899 90%,
     #ff6b6b 100%
   );
+  position: relative;
+  background: transparent;
+}
+
+.ultrathink-frame::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 2px;
   background-image: var(--ultrathink-spectrum);
   background-size: 220% 220%;
+  pointer-events: none;
   filter: saturate(0.82) brightness(0.92);
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
   animation: ultrathink-rainbow 10s linear infinite;
+}
+
+.ultrathink-frame > * {
+  position: relative;
 }
 
 .ultrathink-chroma {
@@ -867,4 +1139,16 @@ label:has(> select#reasoning-effort) select {
 
 .dark .model-picker-list::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.15);
+}
+
+/* Composer chips are non-editable decorators, so the browser skips them when
+   painting text selection; this overlay stands in for the native highlight. */
+.composer-inline-chip[data-composer-chip-selected]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 6px;
+  background-color: Highlight;
+  opacity: 0.3;
+  pointer-events: none;
 }

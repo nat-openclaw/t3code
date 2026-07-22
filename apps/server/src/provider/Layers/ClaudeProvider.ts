@@ -2,7 +2,6 @@ import {
   type ClaudeSettings,
   type ModelCapabilities,
   type ModelSelection,
-  ProviderDriverKind,
   type ServerProviderModel,
   type ServerProviderSlashCommand,
 } from "@t3tools/contracts";
@@ -22,8 +21,10 @@ import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import { compareSemverVersions } from "@t3tools/shared/semver";
 import {
   query as claudeQuery,
+  type Options as ClaudeQueryOptions,
   type SlashCommand as ClaudeSlashCommand,
   type SDKUserMessage,
+  type SettingSource,
 } from "@anthropic-ai/claude-agent-sdk";
 
 import {
@@ -37,13 +38,13 @@ import {
   spawnAndCollect,
   type ServerProviderDraft,
 } from "../providerSnapshot.ts";
+import { resolveClaudeSdkExecutablePath } from "../Drivers/ClaudeExecutable.ts";
 import { makeClaudeEnvironment } from "../Drivers/ClaudeHome.ts";
 
 const DEFAULT_CLAUDE_MODEL_CAPABILITIES: ModelCapabilities = createModelCapabilities({
   optionDescriptors: [],
 });
 
-const PROVIDER = ProviderDriverKind.make("claudeAgent");
 const CLAUDE_PRESENTATION = {
   displayName: "Claude",
   showInteractionModeToggle: true,
@@ -77,8 +78,8 @@ const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
           id: "contextWindow",
           label: "Context Window",
           options: [
-            { value: "200k", label: "200k", isDefault: true },
-            { value: "1m", label: "1M" },
+            { value: "200k", label: "200k" },
+            { value: "1m", label: "1M", isDefault: true },
           ],
         }),
       ],
@@ -163,8 +164,8 @@ const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
           id: "contextWindow",
           label: "Context Window",
           options: [
-            { value: "200k", label: "200k", isDefault: true },
-            { value: "1m", label: "1M" },
+            { value: "200k", label: "200k" },
+            { value: "1m", label: "1M", isDefault: true },
           ],
         }),
       ],
@@ -194,6 +195,37 @@ const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
     }),
   },
   {
+    slug: "claude-sonnet-5",
+    name: "Claude Sonnet 5",
+    isCustom: false,
+    capabilities: createModelCapabilities({
+      optionDescriptors: [
+        buildSelectOptionDescriptor({
+          id: "effort",
+          label: "Reasoning",
+          options: [
+            { value: "low", label: "Low" },
+            { value: "medium", label: "Medium" },
+            { value: "high", label: "High", isDefault: true },
+            { value: "xhigh", label: "Extra High" },
+            { value: "max", label: "Max" },
+            { value: "ultrathink", label: "Ultrathink" },
+          ],
+          promptInjectedValues: ["ultrathink"],
+        }),
+        buildSelectOptionDescriptor({
+          id: "contextWindow",
+          label: "Context Window",
+          // Sonnet is 200k-default in Claude Code (1M is opt-in there too).
+          options: [
+            { value: "200k", label: "200k", isDefault: true },
+            { value: "1m", label: "1M" },
+          ],
+        }),
+      ],
+    }),
+  },
+  {
     slug: "claude-sonnet-4-6",
     name: "Claude Sonnet 4.6",
     isCustom: false,
@@ -214,6 +246,7 @@ const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
         buildSelectOptionDescriptor({
           id: "contextWindow",
           label: "Context Window",
+          // Sonnet is 200k-default in Claude Code (1M is opt-in there too).
           options: [
             { value: "200k", label: "200k", isDefault: true },
             { value: "1m", label: "1M" },
@@ -322,7 +355,12 @@ export function normalizeClaudeCliEffort(
   if (effort === "ultracode") {
     return "xhigh";
   }
-  if (effort === "xhigh" && model !== "claude-fable-5" && model !== "claude-opus-4-8") {
+  if (
+    effort === "xhigh" &&
+    model !== "claude-fable-5" &&
+    model !== "claude-opus-4-8" &&
+    model !== "claude-sonnet-5"
+  ) {
     return "max";
   }
   if (effort === "max" && model === "claude-sonnet-4-6") {
@@ -335,8 +373,22 @@ export function isClaudeUltracodeEffort(effort: string | null | undefined): bool
   return effort === "ultracode";
 }
 
+export function resolveClaudeContextWindow(
+  modelSelection: ModelSelection | undefined,
+): string | undefined {
+  const caps = getClaudeModelCapabilities(modelSelection?.model);
+  const raw = getModelSelectionStringOptionValue(modelSelection, "contextWindow");
+  const descriptors = getProviderOptionDescriptors({
+    caps,
+    ...(raw ? { selections: [{ id: "contextWindow", value: raw }] } : {}),
+  });
+  const descriptor = descriptors.find((candidate) => candidate.id === "contextWindow");
+  const value = getProviderOptionCurrentValue(descriptor);
+  return typeof value === "string" ? value : undefined;
+}
+
 export function resolveClaudeApiModelId(modelSelection: ModelSelection): string {
-  switch (getModelSelectionStringOptionValue(modelSelection, "contextWindow")) {
+  switch (resolveClaudeContextWindow(modelSelection)) {
     case "1m":
       return `${modelSelection.model}[1m]`;
     default:
@@ -444,9 +496,57 @@ function claudeAuthMetadata(input: {
   return undefined;
 }
 
+function apiProviderAuthMetadata(
+  apiProvider: string | undefined,
+): { readonly type: string; readonly label: string } | undefined {
+  return apiProvider === "bedrock" ? { type: "bedrock", label: "Amazon Bedrock" } : undefined;
+}
+
 // ── SDK capability probe ────────────────────────────────────────────
 
-const CAPABILITIES_PROBE_TIMEOUT_MS = 8_000;
+// Amazon Bedrock initializes far slower than first-party auth: the SDK boots the
+// Bedrock backend and runs the `awsAuthRefresh` credential hook before returning
+// account info. The previous 8s budget expired mid-init, so the probe returned
+// `undefined` and left the provider unverified and unselectable in the picker.
+const CAPABILITIES_PROBE_TIMEOUT_MS = 25_000;
+
+/**
+ * Keep workspace-scoped command discovery intact while isolating the periodic
+ * health check from configured MCP servers.
+ */
+export const CLAUDE_CAPABILITIES_PROBE_SETTING_SOURCES = [
+  "user",
+  "project",
+  "local",
+] as const satisfies ReadonlyArray<SettingSource>;
+
+/** Build the exact SDK options used by the periodic Claude capability probe. */
+export function buildClaudeCapabilitiesProbeQueryOptions(input: {
+  readonly executablePath: string;
+  readonly abortController: AbortController;
+  readonly environment: NodeJS.ProcessEnv;
+  readonly cwd: string | undefined;
+}): ClaudeQueryOptions {
+  return {
+    persistSession: false,
+    pathToClaudeCodeExecutable: input.executablePath,
+    abortController: input.abortController,
+    settingSources: [...CLAUDE_CAPABILITIES_PROBE_SETTING_SOURCES],
+    allowedTools: [],
+    // Ignore MCP definitions from every filesystem setting source above. The
+    // SDK combines this empty explicit map with --strict-mcp-config.
+    mcpServers: {},
+    strictMcpConfig: true,
+    env: {
+      ...input.environment,
+      // Connected claude.ai MCP servers are discovered outside filesystem
+      // config; disable them independently for this health check.
+      ENABLE_CLAUDEAI_MCP_SERVERS: "false",
+    },
+    ...(input.cwd ? { cwd: input.cwd } : {}),
+    stderr: () => {},
+  };
+}
 
 function nonEmptyProbeString(value: string): string | undefined {
   const candidate = value.trim();
@@ -457,6 +557,12 @@ type ClaudeCapabilitiesProbe = {
   readonly email: string | undefined;
   readonly subscriptionType: string | undefined;
   readonly tokenSource: string | undefined;
+  /**
+   * Active API backend reported by the SDK's `AccountInfo`. Anthropic OAuth
+   * login only applies when `"firstParty"`; for Amazon Bedrock (`"bedrock"`)
+   * the subscription/token fields are absent and auth is external AWS creds.
+   */
+  readonly apiProvider: string | undefined;
   readonly slashCommands: ReadonlyArray<ServerProviderSlashCommand>;
 };
 
@@ -548,10 +654,15 @@ function waitForAbortSignal(signal: AbortSignal): Promise<void> {
 const probeClaudeCapabilities = (
   claudeSettings: ClaudeSettings,
   environment?: NodeJS.ProcessEnv,
+  cwd?: string,
 ) => {
   const abort = new AbortController();
   return Effect.gen(function* () {
     const claudeEnvironment = yield* makeClaudeEnvironment(claudeSettings, environment);
+    const executablePath = yield* resolveClaudeSdkExecutablePath(
+      claudeSettings.binaryPath,
+      claudeEnvironment,
+    );
     return yield* Effect.tryPromise(async () => {
       const q = claudeQuery({
         // Never yield — we only need initialization data, not a conversation.
@@ -560,15 +671,12 @@ const probeClaudeCapabilities = (
         prompt: (async function* (): AsyncGenerator<SDKUserMessage> {
           await waitForAbortSignal(abort.signal);
         })(),
-        options: {
-          persistSession: false,
-          pathToClaudeCodeExecutable: claudeSettings.binaryPath,
+        options: buildClaudeCapabilitiesProbeQueryOptions({
+          executablePath,
           abortController: abort,
-          settingSources: ["user", "project", "local"],
-          allowedTools: [],
-          env: claudeEnvironment,
-          stderr: () => {},
-        },
+          environment: claudeEnvironment,
+          cwd,
+        }),
       });
       const init = await q.initializationResult();
       const account = init.account as
@@ -576,12 +684,14 @@ const probeClaudeCapabilities = (
             readonly email?: string;
             readonly subscriptionType?: string;
             readonly tokenSource?: string;
+            readonly apiProvider?: string;
           }
         | undefined;
       return {
         email: account?.email,
         subscriptionType: account?.subscriptionType,
         tokenSource: account?.tokenSource,
+        apiProvider: account?.apiProvider,
         slashCommands: parseClaudeInitializationCommands(init.commands),
       } satisfies ClaudeCapabilitiesProbe;
     });
@@ -631,7 +741,6 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
   const checkedAt = DateTime.formatIso(yield* DateTime.now);
   const allModels = providerModelsFromSettings(
     BUILT_IN_MODELS,
-    PROVIDER,
     claudeSettings.customModels,
     DEFAULT_CLAUDE_MODEL_CAPABILITIES,
   );
@@ -722,7 +831,6 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
 
   const models = providerModelsFromSettings(
     getBuiltInClaudeModelsForVersion(parsedVersion),
-    PROVIDER,
     claudeSettings.customModels,
     DEFAULT_CLAUDE_MODEL_CAPABILITIES,
   );
@@ -757,10 +865,11 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     });
   }
 
-  const authMetadata = claudeAuthMetadata({
-    subscriptionType: capabilities.subscriptionType,
-    authMethod: capabilities.tokenSource,
-  });
+  const authMetadata =
+    claudeAuthMetadata({
+      subscriptionType: capabilities.subscriptionType,
+      authMethod: capabilities.tokenSource,
+    }) ?? apiProviderAuthMetadata(capabilities.apiProvider);
   return buildServerProvider({
     presentation: CLAUDE_PRESENTATION,
     enabled: claudeSettings.enabled,
@@ -790,7 +899,6 @@ export const makePendingClaudeProvider = (
     const checkedAt = yield* nowIso;
     const models = providerModelsFromSettings(
       BUILT_IN_MODELS,
-      PROVIDER,
       claudeSettings.customModels,
       DEFAULT_CLAUDE_MODEL_CAPABILITIES,
     );
